@@ -372,20 +372,27 @@ def to_anthropic_response(
                 finish_reason = "tool_calls"
             if log_tool_calls:
                 try:
-                    pn = provider or resp.coderouter_provider or "unknown"
-                    names = [ (tc.get("function") or {}).get("name", "") for tc in extracted]
+                    # v2.17: simple multi-line [tool call repair] without JSON, no provider
+                    import json as _json
+
+                    after_lines: list[str] = []
+                    for tc in extracted:
+                        fn = tc.get("function") or {}
+                        name = fn.get("name", "")
+                        args = fn.get("arguments", "")
+                        # args is typically JSON string
+                        after_lines.append(f"{name}({args})" if name else str(args))
+                    after_text = "\n".join(after_lines) if after_lines else (cleaned if isinstance(cleaned, str) else "")
                     log_tool_repair(
                         logger,
-                        provider=pn,
-                        original_text=_repair_entered_text,
-                        repaired_tool_names=[n for n in names if n],
-                        repaired_count=len(extracted),
-                        cleaned_text=cleaned if isinstance(cleaned, str) else "",
+                        before=_repair_entered_text,
+                        after=after_text,
                     )
                 except Exception:
                     pass
         elif log_tool_calls and _repair_entered_text is not None:
             try:
+                # Keep skipped at DEBUG (not shown at INFO default)
                 pn = provider or resp.coderouter_provider or "unknown"
                 log_tool_repair_skipped(
                     logger, provider=pn, reason="no repair extracted", text_length=len(_repair_entered_text)

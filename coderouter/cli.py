@@ -67,7 +67,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--log-format",
         default=None,
         choices=["json", "pretty", "text"],
-        help="Log output format: json (structured, default) or pretty/text (human-readable INFO: ...). Env CODEROUTER_LOG_FORMAT overrides; CLI wins.",
+        help="Log output format: pretty (default, human-readable) or json (structured). Env CODEROUTER_T_LOG_FORMAT overrides; CLI wins.",
     )
 
     # v1.6.3: `--env-file PATH` is a thin gateway between CodeRouter and any
@@ -534,7 +534,7 @@ def main(argv: list[str] | None = None) -> int:
         # v2.16: --log-format → env so the uvicorn worker (factory reload)
         # sees the same format. Explicit CLI wins over any prior env.
         if getattr(args, "log_format", None):
-            os.environ["CODEROUTER_LOG_FORMAT"] = args.log_format
+            os.environ["CODEROUTER_T_LOG_FORMAT"] = args.log_format
 
         # v2.7.5: warn about the "bound beyond loopback but Host validation
         # will reject everything" trap BEFORE uvicorn takes over the console,

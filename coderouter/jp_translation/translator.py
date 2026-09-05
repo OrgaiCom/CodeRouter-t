@@ -73,14 +73,26 @@ def translate_anthropic_request_ja_to_en(
     This is a synchronous function; caller must asyncio.to_thread if in async context.
     Returns a new AnthropicRequest (mutated copy via model_copy).
 
-    When ``verbose`` is True, emits one ``translation-pair`` log line per
-    translated block with ``direction=ja_to_en``, ``original`` (JA) and
-    ``translated`` (EN) so operators can see ``日本語→English`` mapping.
-    Off by default to keep the log compact (only count lines from the
-    caller).
+    When ``verbose`` is True (default in v2.17), emits one simple
+    ``[translation] JA→EN (0.xxxs)`` per request (multi-line, no JSON):
+
+        [translation] JA→EN (0.042s):
+        <original>
+        ->
+        <translated>
+
+    WARN logs (translation-failed etc.) are always emitted regardless of
+    ``verbose`` (per v2.17 #2: WARNは常に出す).
     """
     if not manager.is_available():
         return req
+
+    import time as _time
+
+    # Collect for batch log (request unit)
+    _orig_batch: list[str] = []
+    _trans_batch: list[str] = []
+    _total_elapsed = 0.0
 
     # Work on a deep copy via model_copy
     # AnthropicRequest.messages is list[AnthropicMessage], content is str | list[dict]
@@ -91,12 +103,13 @@ def translate_anthropic_request_ja_to_en(
         if isinstance(content, str):
             # Short-form string content: only translate if user role and Japanese
             if role == "user" and is_japanese(content):
+                _t0 = _time.perf_counter()
                 new_content = _translate_with_protection(content, "ja_to_en", manager)
-                if verbose and new_content != content:
-                    try:
-                        log_translation_pair(logger, direction="ja_to_en", original=content, translated=new_content, blocks=1)
-                    except Exception:
-                        pass
+                _elapsed = _time.perf_counter() - _t0
+                if new_content != content:
+                    _orig_batch.append(content)
+                    _trans_batch.append(new_content)
+                    _total_elapsed += _elapsed
                 new_messages.append(msg.model_copy(update={"content": new_content}))
             else:
                 new_messages.append(msg)
@@ -119,12 +132,13 @@ def translate_anthropic_request_ja_to_en(
             if btype == "text":
                 # is_japanese optimization (design 3.3.1)
                 if role == "user" and btext and is_japanese(btext):
+                    _t0 = _time.perf_counter()
                     new_text = _translate_with_protection(btext, "ja_to_en", manager)
-                    if verbose and new_text != btext:
-                        try:
-                            log_translation_pair(logger, direction="ja_to_en", original=btext, translated=new_text, blocks=1)
-                        except Exception:
-                            pass
+                    _elapsed = _time.perf_counter() - _t0
+                    if new_text != btext:
+                        _orig_batch.append(btext)
+                        _trans_batch.append(new_text)
+                        _total_elapsed += _elapsed
                     if isinstance(block, dict):
                         new_block = dict(block)
                         new_block["text"] = new_text
@@ -146,6 +160,22 @@ def translate_anthropic_request_ja_to_en(
                 new_blocks.append(block)  # type: ignore[arg-type]
         new_messages.append(msg.model_copy(update={"content": new_blocks}))
 
+    if verbose and _orig_batch:
+        try:
+            # Join multiple blocks with newline (human readable)
+            _orig_text = "\n".join(_orig_batch)
+            _trans_text = "\n".join(_trans_batch)
+            log_translation_pair(
+                logger,
+                direction="ja_to_en",
+                original=_orig_text,
+                translated=_trans_text,
+                elapsed_s=_total_elapsed,
+                blocks=len(_orig_batch),
+            )
+        except Exception:
+            pass
+
     # system field: NEVER translate (design 3.3.2 #1)
     # Even if system is list[ContentBlock] with type text, we skip.
     return req.model_copy(update={"messages": new_messages})
@@ -163,11 +193,18 @@ def translate_anthropic_response_en_to_ja(
     double-translation quality loss (e.g. mixed code-comment responses).
     Synchronous; caller must to_thread if needed.
 
-    When ``verbose`` is True, emits ``translation-pair`` with
-    ``direction=en_to_ja`` (English→日本語) per block.
+    When ``verbose`` is True (default in v2.17), emits one simple
+    ``[translation] EN→JA (0.xxxs)`` per response (multi-line, no JSON).
+    WARN logs are always emitted regardless of ``verbose``.
     """
     if not manager.is_available():
         return resp
+
+    import time as _time
+
+    _orig_batch: list[str] = []
+    _trans_batch: list[str] = []
+    _total_elapsed = 0.0
 
     new_content: list[dict[str, Any]] = []
     for block in resp.content:
@@ -185,12 +222,13 @@ def translate_anthropic_response_en_to_ja(
                 if is_japanese(btext):
                     new_content.append(block)  # type: ignore[arg-type]
                     continue
+                _t0 = _time.perf_counter()
                 new_text = _translate_with_protection(btext, "en_to_ja", manager)
-                if verbose and new_text != btext:
-                    try:
-                        log_translation_pair(logger, direction="en_to_ja", original=btext, translated=new_text, blocks=1)
-                    except Exception:
-                        pass
+                _elapsed = _time.perf_counter() - _t0
+                if new_text != btext:
+                    _orig_batch.append(btext)
+                    _trans_batch.append(new_text)
+                    _total_elapsed += _elapsed
                 if isinstance(block, dict):
                     new_block = dict(block)
                     new_block["text"] = new_text
@@ -207,6 +245,21 @@ def translate_anthropic_response_en_to_ja(
             new_content.append(block)  # type: ignore[arg-type]
         else:
             new_content.append(block)  # type: ignore[arg-type]
+
+    if verbose and _orig_batch:
+        try:
+            _orig_text = "\n".join(_orig_batch)
+            _trans_text = "\n".join(_trans_batch)
+            log_translation_pair(
+                logger,
+                direction="en_to_ja",
+                original=_orig_text,
+                translated=_trans_text,
+                elapsed_s=_total_elapsed,
+                blocks=len(_orig_batch),
+            )
+        except Exception:
+            pass
 
     return resp.model_copy(update={"content": new_content})
 

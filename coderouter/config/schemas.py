@@ -2497,20 +2497,18 @@ class TranslationConfig(BaseModel):
         description='Execution device. Only "cpu" allowed (VRAM zero guarantee). providers.yaml setting.',
     )
     log_translations: bool = Field(
-        default=True,
-        description="Enable detailed translation logging (debug, redacted). CodeRouter-t default True.",
-    )
-    # v2.16: per-block JA↔EN pair display (original + translated). Off by
-    # default so the healthy path logs only a compact count line; turn on to
-    # see "日本語→English" mappings per user text block (CLI→model) and
-    # "English→日本語" on the response leg. Bounded to 500 chars per field.
-    verbose: bool = Field(
         default=False,
-        description="When true, emit translation-pair log lines with original and translated text per block (JA→EN and EN→JA). Off = compact count only.",
+        description="v2.17: old count log (translation-*-applied). Default false — old noisy logs are OFF by default. WARN (translation-failed etc.) is always emitted regardless.",
+    )
+    # v2.17: simple multi-line human-readable pair log. Default ON per user
+    # request (human-friendly). When false, no [translation] pair logs.
+    verbose: bool = Field(
+        default=True,
+        description="v2.17: when true (default), emit simple [translation] JA→EN / EN→JA pair logs per request (multi-line, with 0.000s timing, no JSON).",
     )
     log_tool_calls: bool = Field(
-        default=False,
-        description="When true, emit tool-call-observed / tool-repair log lines with name+arguments and repair before/after. Off = no per-tool verbosity.",
+        default=True,
+        description="v2.17: when true (default), emit simple [tool call repair] multi-line logs. Default ON for visibility.",
     )
     model_dir: str | None = Field(
         default=None,
@@ -2741,14 +2739,11 @@ class CodeRouterConfig(BaseModel):
         default_factory=TranslationConfig,
         description="JA↔EN translation layer (CPU Argos Translate, providers.yaml). Disabled by default.",
     )
-    # v2.16: human-readable log format switch. "json" = structured JSON lines
-    # (default, backward compatible), "pretty" = "YYYY-MM-DD HH:MM:SS INFO logger: msg {extra}"
-    # readable without a JSON parser. Overridable via CODEROUTER_LOG_FORMAT env
-    # or --log-format CLI. Providers.yaml declared value is applied at startup
-    # after load_config (ingress/app.py re-configures logging).
+    # v2.17: human-readable log format. Default pretty (human-friendly).
+    # "json" is available when CODEROUTER_T_LOG_FORMAT=json is explicitly set.
     log_format: Literal["json", "pretty"] = Field(
-        default="json",
-        description='Log output format: "json" (structured JSON lines, default) or "pretty" (human-readable INFO: ...). Env CODEROUTER_LOG_FORMAT and --log-format override.',
+        default="pretty",
+        description='Log output format: "pretty" (default, human-readable) or "json" (structured). Env CODEROUTER_T_LOG_FORMAT and --log-format override.',
     )
 
     @model_validator(mode="after")

@@ -87,10 +87,11 @@ class JsonLineFormatter(logging.Formatter):
 # journals from the second app onward.
 _CODEROUTER_LOG_HANDLER_MARKER: str = "_coderouter_json_line_handler"
 
-# v2.16: log-format switching — "json" (default, structured) vs "pretty"
-# (human-readable INFO: ...). Env var CODEROUTER_LOG_FORMAT overrides the
-# default; explicit configure_logging(format=...) wins over env.
-_LOG_FORMAT_ENV = "CODEROUTER_LOG_FORMAT"
+# v2.16: log-format switching — "pretty" (default, human-readable) vs "json"
+# (structured). Env var CODEROUTER_T_LOG_FORMAT overrides the default;
+# explicit configure_logging(format=...) wins over env. Old
+# CODEROUTER_LOG_FORMAT is fully removed (v2.17 breaking change).
+_LOG_FORMAT_ENV = "CODEROUTER_T_LOG_FORMAT"
 _VALID_LOG_FORMATS = frozenset({"json", "pretty", "text"})
 
 
@@ -153,19 +154,19 @@ class PrettyFormatter(logging.Formatter):
 
 
 def _resolve_log_format(explicit: str | None) -> str:
-    """Resolve effective log format: explicit > env > default(json)."""
+    """Resolve effective log format: explicit > env > default(pretty)."""
     if explicit is not None:
         v = explicit.strip().lower()
         if v in _VALID_LOG_FORMATS:
             return "pretty" if v == "text" else v
-        # Invalid explicit value: fall back to json rather than crash.
-        return "json"
+        # Invalid explicit value: fall back to pretty (new default) rather than crash.
+        return "pretty"
     import os
 
     env = os.environ.get(_LOG_FORMAT_ENV, "").strip().lower()
     if env in _VALID_LOG_FORMATS:
         return "pretty" if env == "text" else env
-    return "json"
+    return "pretty"
 
 
 def configure_logging(level: str = "INFO", format: str | None = None) -> None:  # type: ignore[override]
@@ -173,10 +174,10 @@ def configure_logging(level: str = "INFO", format: str | None = None) -> None:  
 
     Args:
         level: stdlib level name (INFO, DEBUG, ...).
-        format: "json" (default) or "pretty"/"text" (human-readable
+        format: "json" (structured) or "pretty"/"text" (human-readable
             ``YYYY-MM-DD HH:MM:SS LEVEL logger: msg {extra}``). When None,
-            reads ``CODEROUTER_LOG_FORMAT`` env; when that is unset,
-            defaults to "json" for backward compatibility.
+            reads ``CODEROUTER_T_LOG_FORMAT`` env; when that is unset,
+            defaults to "pretty" (v2.17 default).
 
     Only the handler this function previously installed (identified by the
     :data:`_CODEROUTER_LOG_HANDLER_MARKER` attribute) is removed on
@@ -1850,10 +1851,11 @@ def log_fallback_occurred(
 
 # ---------------------------------------------------------------------------
 # v2.16: translation-pair / tool-call visibility logging
+# v2.17: simple multi-line human-readable format, no JSON, with timing
 # ---------------------------------------------------------------------------
 
 # Truncation guard for content that rides on a log line. 500 chars keeps a
-# JSONL line bounded while still showing the salient translation / tool
+# line bounded while still showing the salient translation / tool
 # content at a glance; the full body is never logged (privacy + size).
 _TRANSLATION_LOG_MAX_CHARS = 500
 _TOOL_LOG_MAX_CHARS = 1000
@@ -1866,17 +1868,13 @@ def _truncate_for_log(text: str, limit: int = _TRANSLATION_LOG_MAX_CHARS) -> str
 
 
 class TranslationPairPayload(TypedDict):
-    """Structured shape of ``translation-pair`` log record.
-
-    direction: ``ja_to_en`` (CLI→model) or ``en_to_ja`` (model→CLI).
-    original:  JA text (ja_to_en) or EN text (en_to_ja) before translation.
-    translated: EN result or JA result after translation.
-    """
+    """Structured shape of ``translation-pair`` log record (kept for compat)."""
 
     direction: str
     original: str
     translated: str
     blocks: int
+    elapsed_s: float
 
 
 def log_translation_pair(
@@ -1885,60 +1883,66 @@ def log_translation_pair(
     direction: str,
     original: str,
     translated: str,
+    elapsed_s: float = 0.0,
     blocks: int = 1,
 ) -> None:
-    """Emit one ``translation-pair`` info line per translated block.
+    """Emit simple multi-line ``[translation]`` info.
 
-    Info level (not debug) so ``--log-level info`` with ``pretty`` format
-    shows the mapping without needing DEBUG. Truncated to
-    ``_TRANSLATION_LOG_MAX_CHARS`` to keep JSONL bounded.  No secrets:
-    translation input is user/model text, not credentials.
+    v2.17: no JSON ``extra`` — the message itself is human-readable:
+
+        [translation] JA→EN (0.042s):
+        <original>
+        ->
+        <translated>
+
+    ``elapsed_s`` is per-request aggregate, formatted to 3 decimals.
+    Truncated to ``_TRANSLATION_LOG_MAX_CHARS``. WARN logs are never
+    suppressed; this INFO line is gated by ``TranslationConfig.verbose``
+    at the call site (default ON in v2.17), so disabling it silences only
+    this line, not warnings like ``translation-failed``.
     """
-    payload: TranslationPairPayload = {
-        "direction": direction,
-        "original": _truncate_for_log(original),
-        "translated": _truncate_for_log(translated),
-        "blocks": blocks,
-    }
-    logger.info("translation-pair", extra=payload)
+    arrow = "JA→EN" if direction == "ja_to_en" else "EN→JA"
+    orig = _truncate_for_log(original)
+    trans = _truncate_for_log(translated)
+    msg = f"[translation] {arrow} ({elapsed_s:.3f}s):\n{orig}\n->\n{trans}"
+    logger.info(msg)
 
 
 class ToolCallObservedPayload(TypedDict):
-    """Structured shape of ``tool-call-observed`` log record."""
+    """Structured shape of ``tool-call-observed`` (kept for compat, not used for new simple format)."""
 
     provider: str
     tool_name: str
     tool_call_id: str
-    arguments: str  # JSON string, truncated
-    direction: str  # "request" (client→model) or "response" (model→CLI)
+    arguments: str
+    direction: str
 
 
 def log_tool_call_observed(
     logger: logging.Logger,
     *,
-    provider: str,
-    tool_name: str,
-    tool_call_id: str,
-    arguments: str,
+    provider: str = "",
+    tool_name: str = "",
+    tool_call_id: str = "",
+    arguments: str = "",
     direction: str = "response",
 ) -> None:
-    """Emit a ``tool-call-observed`` info line for one tool invocation.
+    """Emit simple ``[tool call]`` info (v2.17: no JSON, no provider).
 
-    Surfaces ``name`` + ``arguments`` (truncated to _TOOL_LOG_MAX_CHARS) so
-    operators can see *which* tool was called without parsing the full SSE.
+    Example:
+        [tool call] Bash({"command": "ls"})
     """
-    payload: ToolCallObservedPayload = {
-        "provider": provider,
-        "tool_name": tool_name,
-        "tool_call_id": tool_call_id,
-        "arguments": _truncate_for_log(arguments, _TOOL_LOG_MAX_CHARS),
-        "direction": direction,
-    }
-    logger.info("tool-call-observed", extra=payload)
+    # Keep provider param for backward compat but do not emit it.
+    args = _truncate_for_log(arguments, _TOOL_LOG_MAX_CHARS) if arguments else ""
+    if args:
+        msg = f"[tool call] {tool_name}({args})"
+    else:
+        msg = f"[tool call] {tool_name}"
+    logger.info(msg)
 
 
 class ToolRepairPayload(TypedDict):
-    """Structured shape of ``tool-repair`` log record."""
+    """Structured shape of ``tool-repair`` (kept for compat)."""
 
     provider: str
     original_text: str
@@ -1950,29 +1954,45 @@ class ToolRepairPayload(TypedDict):
 def log_tool_repair(
     logger: logging.Logger,
     *,
-    provider: str,
-    original_text: str,
-    repaired_tool_names: list[str],
-    repaired_count: int,
-    cleaned_text: str,
+    provider: str = "",
+    original_text: str = "",
+    repaired_tool_names: list[str] | None = None,
+    repaired_count: int = 0,
+    cleaned_text: str = "",
+    # v2.17 simple format also accepts direct before/after strings
+    before: str | None = None,
+    after: str | None = None,
 ) -> None:
-    """Emit a ``tool-repair`` info line showing before→after.
+    """Emit simple multi-line ``[tool call repair]`` info (v2.17).
 
-    ``original_text`` is the raw assistant text that entered the repair
-    layer; ``repaired_tool_names`` / ``repaired_count`` describe the
-    structured calls that were extracted; ``cleaned_text`` is the residual
-    text after removal.  All text fields are truncated to _TOOL_LOG_MAX_CHARS.
-    Fires only when at least one call was repaired (zero-repair stays quiet).
+    Example:
+        [tool call repair]:
+        <before>
+        ->
+        <after>
+
+    ``before``/``after`` take precedence when given; otherwise falls back
+    to ``original_text`` and a summary built from ``repaired_tool_names``.
+    No JSON extra, no provider.
     """
-    payload: ToolRepairPayload = {
-        "provider": provider,
-        "original_text": _truncate_for_log(original_text, _TOOL_LOG_MAX_CHARS),
-        "repaired_tool_names": repaired_tool_names,
-        "repaired_count": repaired_count,
-        "cleaned_length": len(cleaned_text),
-    }
+    if before is not None or after is not None:
+        b = _truncate_for_log(before if before is not None else original_text, _TOOL_LOG_MAX_CHARS)
+        a = _truncate_for_log(after if after is not None else cleaned_text, _TOOL_LOG_MAX_CHARS)
+        msg = f"[tool call repair]:\n{b}\n->\n{a}"
+        logger.info(msg)
+        return
+    # Fallback for legacy callers
+    b = _truncate_for_log(original_text, _TOOL_LOG_MAX_CHARS)
+    names = repaired_tool_names or []
+    if names:
+        a = ", ".join(names) + f" ({repaired_count} calls)"
+        if cleaned_text:
+            a = f"{a}\n(cleaned: {_truncate_for_log(cleaned_text, 200)})"
+    else:
+        a = _truncate_for_log(cleaned_text, _TOOL_LOG_MAX_CHARS) if cleaned_text else "(no repair)"
+    msg = f"[tool call repair]:\n{b}\n->\n{a}"
     level = logging.INFO if repaired_count > 0 else logging.DEBUG
-    logger.log(level, "tool-repair", extra=payload)
+    logger.log(level, msg)
 
 
 def log_tool_repair_skipped(
