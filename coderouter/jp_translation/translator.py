@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from coderouter.logging import get_logger
+from coderouter.logging import get_logger, log_translation_pair
 from coderouter.translation.anthropic import AnthropicRequest, AnthropicResponse
 
 from .manager import TranslatorManager
@@ -66,11 +66,18 @@ def _translate_with_protection(
 def translate_anthropic_request_ja_to_en(
     req: AnthropicRequest,
     manager: TranslatorManager,
+    verbose: bool = False,
 ) -> AnthropicRequest:
     """Translate user text blocks JA→EN. System/tool_use/tool_result are skipped.
 
     This is a synchronous function; caller must asyncio.to_thread if in async context.
     Returns a new AnthropicRequest (mutated copy via model_copy).
+
+    When ``verbose`` is True, emits one ``translation-pair`` log line per
+    translated block with ``direction=ja_to_en``, ``original`` (JA) and
+    ``translated`` (EN) so operators can see ``日本語→English`` mapping.
+    Off by default to keep the log compact (only count lines from the
+    caller).
     """
     if not manager.is_available():
         return req
@@ -85,6 +92,11 @@ def translate_anthropic_request_ja_to_en(
             # Short-form string content: only translate if user role and Japanese
             if role == "user" and is_japanese(content):
                 new_content = _translate_with_protection(content, "ja_to_en", manager)
+                if verbose and new_content != content:
+                    try:
+                        log_translation_pair(logger, direction="ja_to_en", original=content, translated=new_content, blocks=1)
+                    except Exception:
+                        pass
                 new_messages.append(msg.model_copy(update={"content": new_content}))
             else:
                 new_messages.append(msg)
@@ -108,6 +120,11 @@ def translate_anthropic_request_ja_to_en(
                 # is_japanese optimization (design 3.3.1)
                 if role == "user" and btext and is_japanese(btext):
                     new_text = _translate_with_protection(btext, "ja_to_en", manager)
+                    if verbose and new_text != btext:
+                        try:
+                            log_translation_pair(logger, direction="ja_to_en", original=btext, translated=new_text, blocks=1)
+                        except Exception:
+                            pass
                     if isinstance(block, dict):
                         new_block = dict(block)
                         new_block["text"] = new_text
@@ -137,6 +154,7 @@ def translate_anthropic_request_ja_to_en(
 def translate_anthropic_response_en_to_ja(
     resp: AnthropicResponse,
     manager: TranslatorManager,
+    verbose: bool = False,
 ) -> AnthropicResponse:
     """Translate assistant text blocks EN→JA after Repair.
 
@@ -144,6 +162,9 @@ def translate_anthropic_response_en_to_ja(
     Skips blocks that are already Japanese (is_japanese guard) to avoid
     double-translation quality loss (e.g. mixed code-comment responses).
     Synchronous; caller must to_thread if needed.
+
+    When ``verbose`` is True, emits ``translation-pair`` with
+    ``direction=en_to_ja`` (English→日本語) per block.
     """
     if not manager.is_available():
         return resp
@@ -165,6 +186,11 @@ def translate_anthropic_response_en_to_ja(
                     new_content.append(block)  # type: ignore[arg-type]
                     continue
                 new_text = _translate_with_protection(btext, "en_to_ja", manager)
+                if verbose and new_text != btext:
+                    try:
+                        log_translation_pair(logger, direction="en_to_ja", original=btext, translated=new_text, blocks=1)
+                    except Exception:
+                        pass
                 if isinstance(block, dict):
                     new_block = dict(block)
                     new_block["text"] = new_text

@@ -169,6 +169,106 @@ def _anthropic_has_tool_use(content: list[Any] | None) -> bool:
     return False
 
 
+def _should_log_tool_calls(config: CodeRouterConfig) -> bool:
+    """True iff translation.log_tool_calls is enabled (v2.16 verbosity toggle)."""
+    tcfg = getattr(config, "translation", None)
+    return bool(tcfg is not None and getattr(tcfg, "log_tool_calls", False))
+
+
+def _should_log_translation_verbose(config: CodeRouterConfig) -> bool:
+    """True iff translation.verbose (pair display) is enabled."""
+    tcfg = getattr(config, "translation", None)
+    return bool(tcfg is not None and getattr(tcfg, "verbose", False))
+
+
+def _log_anthropic_tool_calls(request: AnthropicRequest, provider: str) -> None:
+    """Best-effort log tool_use/tool_result blocks found in request history.
+
+    Intent: surface *which* tool is being invoked in the conversation history
+    (assistant → tool_use → user → tool_result). Truncated to 1k chars.
+    Fail-open — logging never breaks the request path.
+    """
+    try:
+        import json as _json
+
+        from coderouter.logging import log_tool_call_observed
+
+        for msg in request.messages:
+            content = getattr(msg, "content", None)
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                if isinstance(block, dict):
+                    btype = block.get("type")
+                    if btype == "tool_use":
+                        log_tool_call_observed(
+                            logger,
+                            provider=provider,
+                            tool_name=str(block.get("name", "")),
+                            tool_call_id=str(block.get("id", "")),
+                            arguments=_json.dumps(block.get("input", {}), ensure_ascii=False),
+                            direction="request",
+                        )
+                    elif btype == "tool_result":
+                        # tool_result is user->tool feedback; still useful to see id/error
+                        log_tool_call_observed(
+                            logger,
+                            provider=provider,
+                            tool_name="tool_result",
+                            tool_call_id=str(block.get("tool_use_id", "")),
+                            arguments=str(block.get("content", ""))[:1000],
+                            direction="request",
+                        )
+                else:
+                    btype = getattr(block, "type", None)
+                    if btype == "tool_use":
+                        log_tool_call_observed(
+                            logger,
+                            provider=provider,
+                            tool_name=str(getattr(block, "name", "")),
+                            tool_call_id=str(getattr(block, "id", "")),
+                            arguments=_json.dumps(getattr(block, "input", {}), ensure_ascii=False),
+                            direction="request",
+                        )
+    except Exception:
+        pass
+
+
+def _log_response_tool_calls(resp: Any, provider: str) -> None:
+    """Log tool_use blocks in an AnthropicResponse (model→CLI direction)."""
+    try:
+        import json as _json
+
+        from coderouter.logging import log_tool_call_observed
+
+        content = getattr(resp, "content", None)
+        if not content:
+            return
+        for block in content:
+            if isinstance(block, dict):
+                if block.get("type") == "tool_use":
+                    log_tool_call_observed(
+                        logger,
+                        provider=provider,
+                        tool_name=str(block.get("name", "")),
+                        tool_call_id=str(block.get("id", "")),
+                        arguments=_json.dumps(block.get("input", {}), ensure_ascii=False),
+                        direction="response",
+                    )
+            else:
+                if getattr(block, "type", None) == "tool_use":
+                    log_tool_call_observed(
+                        logger,
+                        provider=provider,
+                        tool_name=str(getattr(block, "name", "")),
+                        tool_call_id=str(getattr(block, "id", "")),
+                        arguments=_json.dumps(getattr(block, "input", {}), ensure_ascii=False),
+                        direction="response",
+                    )
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # M1: request-scoped drift verdict
 #
@@ -1152,6 +1252,7 @@ def _translation_enabled(config: CodeRouterConfig) -> bool:
 async def _translate_en_ja_with_timeout(
     resp: AnthropicResponse,
     manager: Any | None,
+    verbose: bool = False,
 ) -> AnthropicResponse:
     """Common helper for EN→JA with to_thread + timeout."""
     from coderouter.jp_translation.translator import (
@@ -1159,7 +1260,7 @@ async def _translate_en_ja_with_timeout(
     )
 
     return await asyncio.wait_for(
-        asyncio.to_thread(translate_anthropic_response_en_to_ja, resp, manager),
+        asyncio.to_thread(translate_anthropic_response_en_to_ja, resp, manager, verbose),
         timeout=_TRANSLATION_TIMEOUT_S,
     )
 
@@ -1180,8 +1281,9 @@ async def _maybe_translate_response(
     except Exception:
         return resp
     try:
-        translated = await _translate_en_ja_with_timeout(resp, manager)
         tcfg = getattr(config, "translation", None)
+        verbose = bool(tcfg is not None and getattr(tcfg, "verbose", False))
+        translated = await _translate_en_ja_with_timeout(resp, manager, verbose=verbose)
         if tcfg is not None and getattr(tcfg, "log_translations", False):
             logger.info("translation-en-ja-applied", extra={"blocks": len(translated.content)})
         return translated
@@ -3208,8 +3310,15 @@ class FallbackEngine:
                     # for every other in-flight request. `to_anthropic_response`
                     # itself stays synchronous (many callers depend on it).
                     resp = await asyncio.to_thread(
-                        to_anthropic_response, chat_resp, allowed_tool_names=tool_names
+                        to_anthropic_response,
+                        chat_resp,
+                        allowed_tool_names=tool_names,
+                        provider=adapter.name,
+                        log_tool_calls=_should_log_tool_calls(self.config),
                     )
+                    # v2.16: optional tool-call verbosity for request history
+                    if _should_log_tool_calls(self.config):
+                        _log_anthropic_tool_calls(effective_request, adapter.name)
             except AdapterError as exc:
                 # v1.9-C: record the failure with its observed latency.
                 # Auth-flavored failures (401 / 403) carry no useful
@@ -3277,6 +3386,15 @@ class FallbackEngine:
                     "native_anthropic": is_native,
                 },
             )
+            # v2.16: optional tool-call verbosity — show request history
+            # tool_use/tool_result and response tool_use name+arguments.
+            if _should_log_tool_calls(self.config):
+                # For openai_compat the request history log already happened
+                # inside the ``else`` above; avoid double-logging but ensure
+                # the native path also gets it.
+                if isinstance(adapter, AnthropicAdapter):
+                    _log_anthropic_tool_calls(effective_request, adapter.name)
+                _log_response_tool_calls(resp, adapter.name)
             # v1.9-E phase 2 (L5): record success on the Anthropic
             # non-streaming path too — recovery transitions emit
             # backend-health-changed when an UNHEALTHY provider
@@ -3582,8 +3700,14 @@ class FallbackEngine:
                     # H-4: same as the non-streaming branch — keep the
                     # CPU-bound repair scan off the event loop.
                     anth_resp = await asyncio.to_thread(
-                        to_anthropic_response, chat_resp, allowed_tool_names=tool_names
+                        to_anthropic_response,
+                        chat_resp,
+                        allowed_tool_names=tool_names,
+                        provider=adapter.name,
+                        log_tool_calls=_should_log_tool_calls(self.config),
                     )
+                    if _should_log_tool_calls(self.config):
+                        _log_anthropic_tool_calls(effective_request, adapter.name)
                     event_iter = synthesize_anthropic_stream_from_response(anth_resp)
                     first = await anext(event_iter)
                 else:
@@ -4010,8 +4134,14 @@ class FallbackEngine:
                     chat_req.stream = False
                     chat_resp = await adapter.generate(chat_req, overrides=overrides)
                     resp = await asyncio.to_thread(
-                        to_anthropic_response, chat_resp, allowed_tool_names=tool_names
+                        to_anthropic_response,
+                        chat_resp,
+                        allowed_tool_names=tool_names,
+                        provider=adapter.name,
+                        log_tool_calls=_should_log_tool_calls(self.config),
                     )
+                    if _should_log_tool_calls(self.config):
+                        _log_anthropic_tool_calls(effective_request, adapter.name)
             except AdapterError as exc:
                 self._adaptive.record_attempt(
                     adapter.name,
@@ -4080,10 +4210,17 @@ class FallbackEngine:
                 translated = resp
             else:
                 try:
-                    translated = await _translate_en_ja_with_timeout(resp, manager)
+                    tcfg2 = getattr(self.config, "translation", None)
+                    _verbose_s = bool(tcfg2 is not None and getattr(tcfg2, "verbose", False))
+                    translated = await _translate_en_ja_with_timeout(resp, manager, verbose=_verbose_s)
                 except Exception as exc:
                     logger.warning("translation-en-ja-stream-failed", extra={"error": str(exc)})
                     translated = resp
+            # v2.16: optional tool-call verbosity for stream buffer path
+            if _should_log_tool_calls(self.config):
+                if isinstance(adapter, AnthropicAdapter):
+                    _log_anthropic_tool_calls(effective_request, adapter.name)
+                _log_response_tool_calls(translated if 'translated' in locals() else resp, adapter.name)
 
             # M-3 fix: empty_response handling (mirrors generate_anthropic)
             if empty_response_action != "off" and _anthropic_response_is_empty(translated):

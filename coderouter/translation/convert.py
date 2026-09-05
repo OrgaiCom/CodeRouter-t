@@ -29,6 +29,8 @@ from coderouter.adapters.base import (
     Message,
     StreamChunk,
 )
+from coderouter.logging import get_logger, log_tool_call_observed, log_tool_repair, log_tool_repair_skipped
+
 from coderouter.translation.anthropic import (
     AnthropicMessage,
     AnthropicRequest,
@@ -38,6 +40,8 @@ from coderouter.translation.anthropic import (
     AnthropicUsage,
 )
 from coderouter.translation.tool_repair import repair_tool_calls_in_text
+
+logger = get_logger(__name__)
 
 # ============================================================
 # Anthropic → internal (OpenAI-shaped)
@@ -328,6 +332,8 @@ def to_anthropic_response(
     resp: ChatResponse,
     *,
     allowed_tool_names: list[str] | None = None,
+    provider: str | None = None,
+    log_tool_calls: bool = False,
 ) -> AnthropicResponse:
     """Internal ChatResponse (OpenAI-shaped) → Anthropic response.
 
@@ -337,6 +343,10 @@ def to_anthropic_response(
     similar), the JSON is extracted and surfaced as a structured
     `tool_use` content block. Without the allow-list, repair falls back
     to accepting any tool-shaped JSON (higher false-positive risk).
+
+    When ``log_tool_calls`` is True, emits ``tool-repair`` (before/after)
+    and ``tool-call-observed`` lines so operators can see *which* tool was
+    called and *how* the repair layer rewrote the raw text.
     """
     choices = resp.choices or []
     message: dict[str, Any] = {}
@@ -347,10 +357,12 @@ def to_anthropic_response(
 
     tool_calls = list(message.get("tool_calls") or [])
     text = message.get("content")
+    _repair_entered_text: str | None = None
 
     # v0.3 tool-call repair: only attempt if the model didn't already emit
     # structured tool_calls (otherwise the text is just narration).
     if not tool_calls and isinstance(text, str) and text:
+        _repair_entered_text = text
         cleaned, extracted = repair_tool_calls_in_text(text, allowed_tool_names)
         if extracted:
             text = cleaned
@@ -358,6 +370,28 @@ def to_anthropic_response(
             # Re-map finish_reason so Anthropic reports stop_reason=tool_use.
             if finish_reason in (None, "stop"):
                 finish_reason = "tool_calls"
+            if log_tool_calls:
+                try:
+                    pn = provider or resp.coderouter_provider or "unknown"
+                    names = [ (tc.get("function") or {}).get("name", "") for tc in extracted]
+                    log_tool_repair(
+                        logger,
+                        provider=pn,
+                        original_text=_repair_entered_text,
+                        repaired_tool_names=[n for n in names if n],
+                        repaired_count=len(extracted),
+                        cleaned_text=cleaned if isinstance(cleaned, str) else "",
+                    )
+                except Exception:
+                    pass
+        elif log_tool_calls and _repair_entered_text is not None:
+            try:
+                pn = provider or resp.coderouter_provider or "unknown"
+                log_tool_repair_skipped(
+                    logger, provider=pn, reason="no repair extracted", text_length=len(_repair_entered_text)
+                )
+            except Exception:
+                pass
 
     content_blocks: list[dict[str, Any]] = []
 
@@ -375,6 +409,22 @@ def to_anthropic_response(
     # Empty response guard: Anthropic requires at least one content block.
     if not content_blocks:
         content_blocks.append({"type": "text", "text": ""})
+
+    if log_tool_calls and tool_calls:
+        try:
+            pn = provider or resp.coderouter_provider or "unknown"
+            for tc in tool_calls:
+                fn = tc.get("function") or {}
+                log_tool_call_observed(
+                    logger,
+                    provider=pn,
+                    tool_name=str(fn.get("name", "")),
+                    tool_call_id=str(tc.get("id", "")),
+                    arguments=str(fn.get("arguments", "")),
+                    direction="response",
+                )
+        except Exception:
+            pass
 
     usage_in = resp.usage or {}
     usage = AnthropicUsage(

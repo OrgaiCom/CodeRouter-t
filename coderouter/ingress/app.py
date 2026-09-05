@@ -217,6 +217,12 @@ def create_app(config_path: str | None = None) -> FastAPI:
     # so multiple create_app() calls (tests) don't stack handlers.
     install_collector()
     config = load_config(config_path)
+    # v2.16: apply providers.yaml log_format when no explicit env/CLI override.
+    # Env CODEROUTER_LOG_FORMAT (set by --log-format CLI) wins over YAML, so
+    # we only reconfigure when the env is absent and YAML says pretty.
+    if not os.environ.get("CODEROUTER_LOG_FORMAT", "").strip():
+        if getattr(config, "log_format", "json") != "json":
+            configure_logging(format=config.log_format)
     # v2.3.0: discover plugins from importlib.metadata entry points and
     # apply the user's explicit ``plugins.enabled`` allowlist. When the
     # ``plugins`` block is absent or empty, the loader returns an empty
