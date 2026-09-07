@@ -10,7 +10,7 @@ name: Release to PyPI
 #   1. Go to https://pypi.org/manage/project/coderouter-t/settings/publishing/
 #   2. Add a "GitHub" trusted publisher with:
 #        Owner:               OrgaiCom
-#        Repository:          CodeRouter
+#        Repository:          CodeRouter-t
 #        Workflow filename:   release.yml
 #        Environment name:    pypi          (← required, see `environment:` below)
 #   3. (Optional) Repeat for TestPyPI at

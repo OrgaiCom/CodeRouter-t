@@ -101,11 +101,11 @@ coderouter-t = "coderouter.cli:main"
 coderouter = "coderouter.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/OrgaiCom/CodeRouter"
-Repository = "https://github.com/OrgaiCom/CodeRouter"
-Issues = "https://github.com/OrgaiCom/CodeRouter/issues"
-Changelog = "https://github.com/OrgaiCom/CodeRouter/blob/main/CHANGELOG.md"
-Documentation = "https://github.com/OrgaiCom/CodeRouter#documentation"
+Homepage = "https://github.com/OrgaiCom/CodeRouter-t"
+Repository = "https://github.com/OrgaiCom/CodeRouter-t"
+Issues = "https://github.com/OrgaiCom/CodeRouter-t/issues"
+Changelog = "https://github.com/OrgaiCom/CodeRouter-t/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/OrgaiCom/CodeRouter-t#documentation"
 
 [build-system]
 requires = ["hatchling"]
