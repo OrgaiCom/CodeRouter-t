@@ -67,7 +67,9 @@ if /i "%DO_TRANSLATE%"=="Y" (
         echo translation:
         echo   enabled: true
         echo   device: cpu
-        echo   log_translations: true
+        echo   log_translations: false
+        echo   verbose: true            # 新[translation]ペアは既定ON
+        echo   log_tool_calls: true     # [tool call repair]も既定ON
         echo ------------------------------------------------------------
     ) else (
         echo.
