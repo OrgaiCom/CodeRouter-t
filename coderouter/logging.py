@@ -169,6 +169,21 @@ def _resolve_log_format(explicit: str | None) -> str:
     return "pretty"
 
 
+def _suppress_noisy_loggers() -> None:
+    """Silence noisy third-party INFO logs (argostranslate.utils: * etc.).
+
+    Default OFF: argostranslate emits INFO per sentence which floods the
+    pretty log. Keep WARNING+ visible; INFO is re-enabled only when
+    ``CODEROUTER_T_ARGOS_DEBUG=1`` is set.
+    """
+    import os
+
+    if os.environ.get("CODEROUTER_T_ARGOS_DEBUG", "").strip() in ("1", "true", "True"):
+        return
+    for _name in ("argostranslate", "argostranslate.utils", "argostranslate.translate"):
+        logging.getLogger(_name).setLevel(logging.WARNING)
+
+
 def configure_logging(level: str = "INFO", format: str | None = None) -> None:  # type: ignore[override]
     """Install logging on the root logger. Idempotent.
 
@@ -206,6 +221,7 @@ def configure_logging(level: str = "INFO", format: str | None = None) -> None:  
     install_secret_filter(handler)
     setattr(handler, _CODEROUTER_LOG_HANDLER_MARKER, True)
     root.addHandler(handler)
+    _suppress_noisy_loggers()
 
 
 def get_logger(name: str) -> logging.Logger:

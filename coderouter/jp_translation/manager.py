@@ -52,6 +52,16 @@ class TranslatorManager:
                 "argostranslate is not installed. Install via `pip install coderouter-t[translation]`"
             ) from exc
 
+        # Suppress noisy argostranslate INFO (e.g. argostranslate.utils: *) default OFF
+        # Mirrors logging._suppress_noisy_loggers(); applied here for code paths
+        # that use TranslatorManager without going through configure_logging().
+        try:
+            from coderouter.logging import _suppress_noisy_loggers as _supp  # type: ignore[import]
+
+            _supp()
+        except Exception:
+            pass
+
         self._translate_module = _translate
 
         # Optional model_dir handling: Argos uses package metadata, not direct file load.
