@@ -160,19 +160,30 @@ def translate_anthropic_request_ja_to_en(
                 new_blocks.append(block)  # type: ignore[arg-type]
         new_messages.append(msg.model_copy(update={"content": new_blocks}))
 
-    if verbose and _orig_batch:
+    if verbose:
         try:
-            # Join multiple blocks with newline (human readable)
-            _orig_text = "\n".join(_orig_batch)
-            _trans_text = "\n".join(_trans_batch)
-            log_translation_pair(
-                logger,
-                direction="ja_to_en",
-                original=_orig_text,
-                translated=_trans_text,
-                elapsed_s=_total_elapsed,
-                blocks=len(_orig_batch),
-            )
+            if _orig_batch:
+                # Join multiple blocks with newline (human readable)
+                _orig_text = "\n".join(_orig_batch)
+                _trans_text = "\n".join(_trans_batch)
+                log_translation_pair(
+                    logger,
+                    direction="ja_to_en",
+                    original=_orig_text,
+                    translated=_trans_text,
+                    elapsed_s=_total_elapsed,
+                    blocks=len(_orig_batch),
+                )
+            else:
+                # No Japanese detected in request — log skipped translation for observability
+                log_translation_pair(
+                    logger,
+                    direction="ja_to_en",
+                    original="(no Japanese text detected)",
+                    translated="(no translation needed)",
+                    elapsed_s=0.0,
+                    blocks=0,
+                )
         except Exception:
             pass
 
@@ -246,18 +257,29 @@ def translate_anthropic_response_en_to_ja(
         else:
             new_content.append(block)  # type: ignore[arg-type]
 
-    if verbose and _orig_batch:
+    if verbose:
         try:
-            _orig_text = "\n".join(_orig_batch)
-            _trans_text = "\n".join(_trans_batch)
-            log_translation_pair(
-                logger,
-                direction="en_to_ja",
-                original=_orig_text,
-                translated=_trans_text,
-                elapsed_s=_total_elapsed,
-                blocks=len(_orig_batch),
-            )
+            if _orig_batch:
+                _orig_text = "\n".join(_orig_batch)
+                _trans_text = "\n".join(_trans_batch)
+                log_translation_pair(
+                    logger,
+                    direction="en_to_ja",
+                    original=_orig_text,
+                    translated=_trans_text,
+                    elapsed_s=_total_elapsed,
+                    blocks=len(_orig_batch),
+                )
+            else:
+                # Response was already Japanese (or no translatable text) — log for observability
+                log_translation_pair(
+                    logger,
+                    direction="en_to_ja",
+                    original="(no English text to translate)",
+                    translated="(no translation needed)",
+                    elapsed_s=0.0,
+                    blocks=0,
+                )
         except Exception:
             pass
 
