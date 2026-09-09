@@ -135,8 +135,59 @@ logger = get_logger(__name__)
 # v2.17.1: cold-start Argos/CT2 needs 6-7s on first translate (mwt init + model warmup).
 # 5.0s caused TimeoutError on first request → English passthrough but delayed Japanese log (user-visible bug).
 # Bump to 60s and warm up manager after load (see manager.py warmup).
-_TRANSLATION_MAX_BUFFER_CHARS = 64 * 1024
-_TRANSLATION_TIMEOUT_S = 60.0
+# v2.18: 128K token support — defaults now 131072 tokens (~524KB chars). Config overrides.
+_TRANSLATION_MAX_BUFFER_CHARS = 64 * 1024  # legacy fallback; use _effective_max_chars() for config-aware value
+_TRANSLATION_TIMEOUT_S = 60.0  # legacy fallback; use _effective_timeout() for chunk-aware value
+
+
+def _effective_max_chars(config: Any) -> int:
+    """Resolve effective max buffer chars from TranslationConfig.
+
+    Precedence: explicit max_buffer_chars > max_buffer_tokens*4 > legacy constant.
+    """
+    tcfg = getattr(config, "translation", None)
+    if tcfg is None:
+        return _TRANSLATION_MAX_BUFFER_CHARS
+    if getattr(tcfg, "max_buffer_chars", None) is not None:
+        return int(getattr(tcfg, "max_buffer_chars"))  # type: ignore[arg-type]
+    tokens = getattr(tcfg, "max_buffer_tokens", None)
+    if tokens is not None:
+        try:
+            return int(tokens) * 4
+        except Exception:
+            pass
+    return _TRANSLATION_MAX_BUFFER_CHARS
+
+
+def _effective_chunk_size(config: Any) -> int:
+    tcfg = getattr(config, "translation", None)
+    if tcfg is not None and getattr(tcfg, "chunk_size_chars", None) is not None:
+        return int(getattr(tcfg, "chunk_size_chars"))  # type: ignore[arg-type]
+    return 4096
+
+
+def _effective_overall_timeout(config: Any, total_chars: int, chunk_size: int) -> float:
+    """Compute overall timeout: explicit overall_timeout_s or chunks*chunk_timeout_s + margin (capped at 300s)."""
+    tcfg = getattr(config, "translation", None)
+    if tcfg is not None and getattr(tcfg, "overall_timeout_s", None) is not None:
+        try:
+            return min(float(getattr(tcfg, "overall_timeout_s")), 600.0)  # type: ignore[arg-type]  # schema le=600
+        except Exception:
+            pass
+    # Auto: chunks * per-chunk timeout + 5s margin, at least 60s, capped at 300s (128K → 1285s would block)
+    per_chunk = 10.0
+    if tcfg is not None and getattr(tcfg, "chunk_timeout_s", None) is not None:
+        try:
+            per_chunk = float(getattr(tcfg, "chunk_timeout_s"))  # type: ignore[arg-type]
+        except Exception:
+            pass
+    # Estimate chunks (ceil)
+    try:
+        chunks = max(1, (total_chars + chunk_size - 1) // chunk_size)
+    except Exception:
+        chunks = 1
+    auto = chunks * per_chunk + 5.0
+    return min(max(_TRANSLATION_TIMEOUT_S, auto), 300.0)
 
 # ---------------------------------------------------------------------------
 # Translation helpers — content extraction (dict/object agnostic, F-1 fix)
@@ -1256,15 +1307,21 @@ async def _translate_en_ja_with_timeout(
     resp: AnthropicResponse,
     manager: Any | None,
     verbose: bool = False,
+    chunk_size_chars: int | None = None,
+    timeout_s: float | None = None,
 ) -> AnthropicResponse:
-    """Common helper for EN→JA with to_thread + timeout."""
+    """Common helper for EN→JA with to_thread + timeout (v2.18 chunk-aware)."""
     from coderouter.jp_translation.translator import (
         translate_anthropic_response_en_to_ja,
     )
 
+    # Resolve chunk size for translator
+    cs = chunk_size_chars if chunk_size_chars is not None else 4096
+    # If timeout not given, caller should compute via _effective_overall_timeout
+    to = timeout_s if timeout_s is not None else _TRANSLATION_TIMEOUT_S
     return await asyncio.wait_for(
-        asyncio.to_thread(translate_anthropic_response_en_to_ja, resp, manager, verbose),
-        timeout=_TRANSLATION_TIMEOUT_S,
+        asyncio.to_thread(translate_anthropic_response_en_to_ja, resp, manager, verbose, cs),
+        timeout=to,
     )
 
 
@@ -1274,24 +1331,48 @@ async def _maybe_translate_response(
     config: CodeRouterConfig,
     manager: Any | None,
 ) -> AnthropicResponse:
-    """Translate resp EN→JA if enabled. Fail-open (return original on error/timeout)."""
+    """Translate resp EN→JA if enabled. Fail-open (return original on error/timeout).
+
+    v2.18: chunk-aware timeout + failure-reason logging.
+    """
     if not _translation_enabled(config) or manager is None:
+        if not _translation_enabled(config):
+            logger.debug("translation-skipped", extra={"direction": "en_to_ja", "reason": "translation-disabled"})
+        elif manager is None:
+            logger.warning("translation-skipped", extra={"direction": "en_to_ja", "reason": "manager-none"})
         return resp
     try:
         is_avail = getattr(manager, "is_available", lambda: False)
         if not is_avail():
+            logger.warning("translation-skipped", extra={"direction": "en_to_ja", "reason": "manager-unavailable"})
             return resp
-    except Exception:
+    except Exception as exc:
+        logger.warning("translation-skipped", extra={"direction": "en_to_ja", "reason": "manager-check-error", "error": str(exc)})
         return resp
     try:
         tcfg = getattr(config, "translation", None)
         verbose = bool(tcfg is not None and getattr(tcfg, "verbose", False))
-        translated = await _translate_en_ja_with_timeout(resp, manager, verbose=verbose)
+        chunk_size = _effective_chunk_size(config)
+        # Compute total chars for timeout
+        total_chars = sum(len(t) for t in _anthropic_text_blocks(resp.content))
+        timeout_s = _effective_overall_timeout(config, total_chars, chunk_size)
+        translated = await _translate_en_ja_with_timeout(resp, manager, verbose=verbose, chunk_size_chars=chunk_size, timeout_s=timeout_s)
         if tcfg is not None and getattr(tcfg, "log_translations", False):
-            logger.info("translation-en-ja-applied", extra={"blocks": len(translated.content)})
+            logger.info("translation-en-ja-applied", extra={"blocks": len(translated.content), "reason": "success", "total_chars": total_chars})
         return translated
+    except asyncio.TimeoutError as exc:
+        # Distinguish timeout with reason
+        tcfg2 = getattr(config, "translation", None)
+        chunk_size2 = _effective_chunk_size(config) if tcfg2 is not None else 4096
+        total_chars2 = sum(len(t) for t in _anthropic_text_blocks(resp.content))
+        timeout_s2 = _effective_overall_timeout(config, total_chars2, chunk_size2)
+        logger.warning(
+            "translation-en-ja-failed",
+            extra={"reason": "timeout", "error": str(exc), "timeout_s": timeout_s2, "total_chars": total_chars2, "chunks": max(1, (total_chars2 + chunk_size2 - 1)//chunk_size2)},
+        )
+        return resp
     except Exception as exc:
-        logger.warning("translation-en-ja-failed", extra={"error": str(exc)})
+        logger.warning("translation-en-ja-failed", extra={"reason": "argos-error", "error": str(exc)})
         return resp
 
 
@@ -4199,25 +4280,58 @@ class FallbackEngine:
             )
 
             # Translation (after drift, before empty check — same order as non-streaming)
+            # v2.18: config-driven 128K + chunked — overflow no longer means skip
             total_chars = sum(len(t) for t in _anthropic_text_blocks(resp.content))
-            if total_chars > _TRANSLATION_MAX_BUFFER_CHARS:
-                # F-2 fix: single warning (removed duplicate)
-                logger.warning(
-                    "translation-buffer-overflow",
-                    extra={
-                        "provider": adapter.name,
-                        "buffered_chars": total_chars,
-                        "limit": _TRANSLATION_MAX_BUFFER_CHARS,
-                    },
-                )
-                translated = resp
+            eff_limit = _effective_max_chars(self.config)
+            chunk_size_s = _effective_chunk_size(self.config)
+            if total_chars > eff_limit:
+                # Soft warning but still translate via chunking (128K resilience)
+                # Only skip if >2*limit to avoid OOM on truly monstrous payloads
+                if total_chars > eff_limit * 2:
+                    logger.warning(
+                        "translation-buffer-overflow",
+                        extra={
+                            "provider": adapter.name,
+                            "buffered_chars": total_chars,
+                            "limit": eff_limit,
+                            "reason": "overflow-hard-skip",
+                        },
+                    )
+                    translated = resp
+                else:
+                    logger.info(
+                        "translation-buffer-chunked",
+                        extra={
+                            "provider": adapter.name,
+                            "buffered_chars": total_chars,
+                            "limit": eff_limit,
+                            "chunks": max(1, (total_chars + chunk_size_s - 1) // chunk_size_s),
+                            "chunk_size": chunk_size_s,
+                            "reason": "overflow-chunked",
+                        },
+                    )
+                    try:
+                        tcfg2 = getattr(self.config, "translation", None)
+                        _verbose_s = bool(tcfg2 is not None and getattr(tcfg2, "verbose", False))
+                        timeout_s2 = _effective_overall_timeout(self.config, total_chars, chunk_size_s)
+                        translated = await _translate_en_ja_with_timeout(resp, manager, verbose=_verbose_s, chunk_size_chars=chunk_size_s, timeout_s=timeout_s2)
+                    except asyncio.TimeoutError as exc:
+                        logger.warning("translation-en-ja-stream-failed", extra={"reason": "timeout", "error": str(exc), "timeout_s": timeout_s2, "total_chars": total_chars})
+                        translated = resp
+                    except Exception as exc:
+                        logger.warning("translation-en-ja-stream-failed", extra={"reason": "argos-error", "error": str(exc)})
+                        translated = resp
             else:
                 try:
                     tcfg2 = getattr(self.config, "translation", None)
                     _verbose_s = bool(tcfg2 is not None and getattr(tcfg2, "verbose", False))
-                    translated = await _translate_en_ja_with_timeout(resp, manager, verbose=_verbose_s)
+                    timeout_s2 = _effective_overall_timeout(self.config, total_chars, chunk_size_s)
+                    translated = await _translate_en_ja_with_timeout(resp, manager, verbose=_verbose_s, chunk_size_chars=chunk_size_s, timeout_s=timeout_s2)
+                except asyncio.TimeoutError as exc:
+                    logger.warning("translation-en-ja-stream-failed", extra={"reason": "timeout", "error": str(exc), "timeout_s": timeout_s2, "total_chars": total_chars})
+                    translated = resp
                 except Exception as exc:
-                    logger.warning("translation-en-ja-stream-failed", extra={"error": str(exc)})
+                    logger.warning("translation-en-ja-stream-failed", extra={"reason": "argos-error", "error": str(exc)})
                     translated = resp
             # v2.16: optional tool-call verbosity for stream buffer path
             if _should_log_tool_calls(self.config):

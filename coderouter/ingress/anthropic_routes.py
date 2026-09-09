@@ -216,23 +216,49 @@ async def messages(
                         translate_anthropic_request_ja_to_en,
                     )
 
-                    # Sync API → to_thread + 60s timeout (design §3.2.3, v2.17.1 cold-start 6-7s)
+                    # Sync API → to_thread + chunk-aware timeout (v2.18, capped at 300s)
                     verbose = bool(getattr(tcfg, "verbose", False))
+                    chunk_size = int(getattr(tcfg, "chunk_size_chars", 4096))
+                    timeout_s = 60.0  # default init so except can always reference
+                    # Estimate total chars for timeout (system excluded, only user text considered)
+                    try:
+                        _total_chars_req = sum(
+                            len(str(b.get("text", "")) if isinstance(b, dict) else str(getattr(b, "text", "") or ""))
+                            for m in anth_req.messages
+                            for b in (m.content if isinstance(m.content, list) else [])
+                            if (b.get("type") if isinstance(b, dict) else getattr(b, "type", None)) == "text"
+                        )
+                    except Exception:
+                        _total_chars_req = 4096
+                    overall = getattr(tcfg, "overall_timeout_s", None)
+                    if overall is not None:
+                        timeout_s = float(overall)
+                    else:
+                        per_chunk = float(getattr(tcfg, "chunk_timeout_s", 10.0))
+                        chunks_est = max(1, (_total_chars_req + chunk_size - 1) // chunk_size) if chunk_size else 1
+                        timeout_s = max(60.0, chunks_est * per_chunk + 5.0)
+                    # Cap inflated timeout for 128K payloads (128*10+5=1285s → 300s)
+                    timeout_s = min(timeout_s, 300.0)
                     anth_req = await asyncio.wait_for(
                         asyncio.to_thread(
-                            translate_anthropic_request_ja_to_en, anth_req, manager, verbose
+                            translate_anthropic_request_ja_to_en, anth_req, manager, verbose, chunk_size
                         ),
-                        timeout=60.0,
+                        timeout=timeout_s,
                     )
                     if getattr(tcfg, "log_translations", False):
                         logger.info(
                             "translation-ja-en-applied",
-                            extra={"messages": len(anth_req.messages)},
+                            extra={"messages": len(anth_req.messages), "reason": "success"},
                         )
+                except asyncio.TimeoutError as exc:
+                    logger.warning(
+                        "translation-ja-en-failed",
+                        extra={"reason": "timeout", "error": str(exc), "timeout_s": timeout_s},
+                    )
                 except Exception as exc:
                     logger.warning(
                         "translation-ja-en-failed",
-                        extra={"error": str(exc)},
+                        extra={"reason": "argos-error", "error": str(exc)},
                     )
     except Exception as exc:
         # Translation must never break request path (design §3.5) — debug so silent swallowing is observable.

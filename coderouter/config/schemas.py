@@ -2514,6 +2514,47 @@ class TranslationConfig(BaseModel):
         default=None,
         description="Argos model directory. None = Argos standard cache.",
     )
+    # v2.18: 128K token support — chunked translation
+    max_buffer_tokens: int = Field(
+        default=131072,
+        ge=1024,
+        description="Max buffer size in tokens before chunking. 131072=128K tokens (~524KB chars via char/4). Exceeding triggers chunked translation.",
+    )
+    max_buffer_chars: int | None = Field(
+        default=None,
+        ge=1024,
+        description="Explicit char limit override. When set, takes precedence over max_buffer_tokens*4. None = tokens*4.",
+    )
+    chunk_size_chars: int = Field(
+        default=4096,
+        ge=512,
+        description="Chunk size in chars for Argos (~1K tokens). Text is split at paragraph/sentence boundaries without breaking code fences.",
+    )
+    chunk_timeout_s: float = Field(
+        default=10.0,
+        ge=1.0,
+        le=120.0,
+        description="Per-chunk timeout in seconds for Argos translate. Overall timeout is chunks*chunk_timeout_s + margin.",
+    )
+    overall_timeout_s: float | None = Field(
+        default=None,
+        ge=1.0,
+        le=600.0,
+        description="Overall translation timeout. None = auto (chunks*chunk_timeout_s + 5s, capped at 300s). Max 600s.",
+    )
+
+    @model_validator(mode="after")
+    def _check_translation_buffer(self) -> TranslationConfig:
+        """Validate translation buffer / chunk coherence."""
+        # Derive effective chars for validation without storing derived field
+        eff_chars = self.max_buffer_chars if self.max_buffer_chars is not None else self.max_buffer_tokens * 4
+        if self.chunk_size_chars > eff_chars:
+            raise ValueError(
+                f"translation.chunk_size_chars ({self.chunk_size_chars}) must be <= effective max buffer chars ({eff_chars}). "
+                f"Increase max_buffer_tokens/max_buffer_chars or reduce chunk_size_chars."
+            )
+        # Cap auto timeout: 128 chunks * 10s +5 =1285s is too long — helper caps at 300s
+        return self
 
     @field_validator("device")
     @classmethod
