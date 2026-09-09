@@ -146,6 +146,22 @@ class TranslatorManager:
                     "translation-manager-slow-startup",
                     extra={"elapsed_ms": round(elapsed_ms, 1), "hint": "model load blocked startup; consider warm cache or pre-install"},
                 )
+            # v2.17.1: warm up CT2 lazy init to avoid 5-7s cold timeout on first request.
+            # First translate triggers mwt + model warmup outside load(). Doing it here
+            # makes the first user request fast (1s) instead of timing out (5s → English fallback + delayed Japanese log).
+            try:
+                _w0 = time.monotonic()
+                with self._lock:
+                    if hasattr(self._ja_en, "translate"):
+                        self._ja_en.translate("こんにちは")
+                    if hasattr(self._en_ja, "translate"):
+                        self._en_ja.translate("Hello")
+                warm_ms = (time.monotonic() - _w0) * 1000
+                logger.info("translation-manager-warmed", extra={"elapsed_ms": round(warm_ms, 1)})
+                if warm_ms > 5000:
+                    logger.warning("translation-manager-warm-slow", extra={"elapsed_ms": round(warm_ms, 1)})
+            except Exception as exc:
+                logger.warning("translation-manager-warm-failed", extra={"error": str(exc)})
         except Exception:
             self._available = False
             raise

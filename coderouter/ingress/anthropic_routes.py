@@ -216,13 +216,13 @@ async def messages(
                         translate_anthropic_request_ja_to_en,
                     )
 
-                    # Sync API → to_thread + 5s timeout (design §3.2.3)
+                    # Sync API → to_thread + 60s timeout (design §3.2.3, v2.17.1 cold-start 6-7s)
                     verbose = bool(getattr(tcfg, "verbose", False))
                     anth_req = await asyncio.wait_for(
                         asyncio.to_thread(
                             translate_anthropic_request_ja_to_en, anth_req, manager, verbose
                         ),
-                        timeout=5.0,
+                        timeout=60.0,
                     )
                     if getattr(tcfg, "log_translations", False):
                         logger.info(

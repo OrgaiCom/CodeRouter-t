@@ -132,8 +132,11 @@ from coderouter.translation import (
 logger = get_logger(__name__)
 
 # Translation layer constants (design §3.4.3)
+# v2.17.1: cold-start Argos/CT2 needs 6-7s on first translate (mwt init + model warmup).
+# 5.0s caused TimeoutError on first request → English passthrough but delayed Japanese log (user-visible bug).
+# Bump to 60s and warm up manager after load (see manager.py warmup).
 _TRANSLATION_MAX_BUFFER_CHARS = 64 * 1024
-_TRANSLATION_TIMEOUT_S = 5.0
+_TRANSLATION_TIMEOUT_S = 60.0
 
 # ---------------------------------------------------------------------------
 # Translation helpers — content extraction (dict/object agnostic, F-1 fix)
