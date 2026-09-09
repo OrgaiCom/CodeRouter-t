@@ -216,6 +216,7 @@ def translate_anthropic_response_en_to_ja(
     _orig_batch: list[str] = []
     _trans_batch: list[str] = []
     _total_elapsed = 0.0
+    _had_japanese_skip: bool = False
 
     new_content: list[dict[str, Any]] = []
     for block in resp.content:
@@ -231,6 +232,7 @@ def translate_anthropic_response_en_to_ja(
                 # is_japanese guard: skip EN→JA if text is already Japanese-heavy
                 # (avoids double-translation quality loss, e.g. code comments + explanation)
                 if is_japanese(btext):
+                    _had_japanese_skip = True
                     new_content.append(block)  # type: ignore[arg-type]
                     continue
                 _t0 = _time.perf_counter()
@@ -271,15 +273,25 @@ def translate_anthropic_response_en_to_ja(
                     blocks=len(_orig_batch),
                 )
             else:
-                # Response was already Japanese (or no translatable text) — log for observability
-                log_translation_pair(
-                    logger,
-                    direction="en_to_ja",
-                    original="(no English text to translate)",
-                    translated="(no translation needed)",
-                    elapsed_s=0.0,
-                    blocks=0,
-                )
+                # Response was already Japanese or had no translatable text — log for observability
+                if _had_japanese_skip:
+                    log_translation_pair(
+                        logger,
+                        direction="en_to_ja",
+                        original="(already Japanese, skipped translation)",
+                        translated="(no translation needed)",
+                        elapsed_s=0.0,
+                        blocks=0,
+                    )
+                else:
+                    log_translation_pair(
+                        logger,
+                        direction="en_to_ja",
+                        original="(no translatable text in response)",
+                        translated="(no translation needed)",
+                        elapsed_s=0.0,
+                        blocks=0,
+                    )
         except Exception:
             pass
 
