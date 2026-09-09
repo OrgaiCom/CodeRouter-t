@@ -22,6 +22,16 @@ def is_japanese(text: str) -> bool:
     return bool(_JA_RE.search(text))
 
 
+def is_pure_japanese(text: str) -> bool:
+    """Return True if text contains Japanese and no ASCII letters.
+
+    Used for EN→JA guard (案B): skip translation only when the block is
+    pure Japanese. Mixed EN+JA (e.g. "Hello こんにちは") returns False
+    so it will still be translated.
+    """
+    return bool(_JA_RE.search(text)) and not bool(re.search(r"[A-Za-z]", text))
+
+
 # ---------------------------------------------------------------------------
 # Detection patterns (priority order: most specific → generic)
 # ---------------------------------------------------------------------------

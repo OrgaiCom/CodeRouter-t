@@ -14,7 +14,13 @@ from coderouter.logging import get_logger, log_translation_pair
 from coderouter.translation.anthropic import AnthropicRequest, AnthropicResponse
 
 from .manager import TranslatorManager
-from .masking import has_placeholder_mutation, is_japanese, mask_text, unmask_text
+from .masking import (
+    has_placeholder_mutation,
+    is_japanese,
+    is_pure_japanese,
+    mask_text,
+    unmask_text,
+)
 
 logger = get_logger(__name__)
 
@@ -200,12 +206,14 @@ def translate_anthropic_response_en_to_ja(
     """Translate assistant text blocks EN→JA after Repair.
 
     Skips tool_use, image. Assumes Repair already structured tool_use.
-    Skips blocks that are already Japanese (is_japanese guard) to avoid
-    double-translation quality loss (e.g. mixed code-comment responses).
+    Skips blocks that are pure Japanese (is_pure_japanese guard, 案B) to
+    avoid double-translation; mixed EN+JA is translated to maximize JA output.
     Synchronous; caller must to_thread if needed.
 
     When ``verbose`` is True (default in v2.17), emits one simple
     ``[translation] EN→JA (0.xxxs)`` per response (multi-line, no JSON).
+    If no block was translated, logs model text + "(no translatable...)"
+    or "(empty)" for observability.
     WARN logs are always emitted regardless of ``verbose``.
     """
     if not manager.is_available():
@@ -217,6 +225,7 @@ def translate_anthropic_response_en_to_ja(
     _trans_batch: list[str] = []
     _total_elapsed = 0.0
     _had_japanese_skip: bool = False
+    _raw_texts: list[str] = []
 
     new_content: list[dict[str, Any]] = []
     for block in resp.content:
@@ -228,10 +237,11 @@ def translate_anthropic_response_en_to_ja(
             btype = getattr(block, "type", None)
             btext = str(getattr(block, "text", "") or "")
         if btype == "text":
+            # 収集: ログでモデル原文を表示するため（案B + empty対応）
+            _raw_texts.append(btext)
             if btext and btext.strip():
-                # is_japanese guard: skip EN→JA if text is already Japanese-heavy
-                # (avoids double-translation quality loss, e.g. code comments + explanation)
-                if is_japanese(btext):
+                # 案B: 純日本語のみスキップ、混在EN+JAは翻訳する
+                if is_pure_japanese(btext):
                     _had_japanese_skip = True
                     new_content.append(block)  # type: ignore[arg-type]
                     continue
@@ -284,10 +294,17 @@ def translate_anthropic_response_en_to_ja(
                         blocks=0,
                     )
                 else:
+                    # モデル原文を表示し、後に (no translatable text...) を追記
+                    # 空の場合は (empty) を追記
+                    raw_joined = "\n".join(t for t in _raw_texts if t and t.strip())
+                    if raw_joined.strip():
+                        display_original = f"{raw_joined}\n(no translatable text in response)"
+                    else:
+                        display_original = "(empty)\n(no translatable text in response)"
                     log_translation_pair(
                         logger,
                         direction="en_to_ja",
-                        original="(no translatable text in response)",
+                        original=display_original,
                         translated="(no translation needed)",
                         elapsed_s=0.0,
                         blocks=0,
