@@ -264,7 +264,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
         # potentially sub-optimally for the agentic harness.
         check_claude_code_chain_suitability(config, logger=logger)
 
-        # Translation layer: initialize TranslatorManager when enabled (CPU-only, resident)
+        # Translation layer: initialize TranslatorManager when enabled (resident)
         # Stored on app.state so ingress and fallback can reach it via request.app.state
         translator_manager = None
         tcfg = getattr(config, "translation", None)
@@ -273,10 +273,13 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 import os as _os
                 import time as _time
 
-                _os.environ["ARGOS_DEVICE_TYPE"] = "cpu"
                 from coderouter.jp_translation.manager import TranslatorManager
 
-                translator_manager = TranslatorManager(model_dir=getattr(tcfg, "model_dir", None))
+                translator_manager = TranslatorManager(
+                    model_dir=getattr(tcfg, "model_dir", None),
+                    device=getattr(tcfg, "device", "cpu"),
+                    model_tier=getattr(tcfg, "model_tier", "standard"),
+                )
                 _tr_start = _time.monotonic()
                 # load() is sync blocking (Argos/CTranslate2 init). In lifespan async context
                 # this blocks startup; manager.load() now logs elapsed_ms and slow-startup warning.

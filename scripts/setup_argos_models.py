@@ -20,6 +20,26 @@ import shutil
 import sys
 import urllib.request
 from pathlib import Path
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+ModelTier = Literal["standard", "high-quality"]
+
+
+class ModelProfile(BaseModel):
+    """翻訳モデル 1 エントリのメタデータ."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., description="ファイル名 (例: translate-ja_en-1_1.argosmodel)")
+    download_url: str = Field(..., description="ダウンロード URL")
+    sha256: str = Field(default="", description="空文字列 = 検証スキップ (警告のみ)")
+    recommended_device: Literal["cpu", "cuda"] = Field(
+        default="cpu",
+        description="推奨デバイス: cpu | cuda",
+    )
+
 
 # Known model file names
 MODELS = ["translate-ja_en-1_1.argosmodel", "translate-en_ja-1_1.argosmodel"]
@@ -130,6 +150,38 @@ FALLBACK_URLS: dict[str, str] = {
     "translate-en_ja-1_1.argosmodel": "https://argos-net.com/v1/translate-en_ja-1_1.argosmodel",
 }
 
+MODEL_REGISTRY: dict[ModelTier, list[ModelProfile]] = {
+    "standard": [
+        ModelProfile(
+            name="translate-ja_en-1_1.argosmodel",
+            download_url="https://argos-net.com/v1/translate-ja_en-1_1.argosmodel",
+            sha256="623e3477959a815eb0a5ef53e09079ae8f1f9d3bbcd230473baf28c03fb83335",
+            recommended_device="cpu",
+        ),
+        ModelProfile(
+            name="translate-en_ja-1_1.argosmodel",
+            download_url="https://argos-net.com/v1/translate-en_ja-1_1.argosmodel",
+            sha256="16300cc4eaa85320520cabcf433b63d01be40ef6966251de72043a083408f716",
+            recommended_device="cpu",
+        ),
+    ],
+    "high-quality": [
+        # TODO(HQ-1): fill download_url / sha256 before release.
+        ModelProfile(
+            name="translate-ja_en-opus-mt-tc-big.argosmodel",
+            download_url="",
+            sha256="",
+            recommended_device="cuda",
+        ),
+        ModelProfile(
+            name="translate-en_ja-opus-mt-tc-big.argosmodel",
+            download_url="",
+            sha256="",
+            recommended_device="cuda",
+        ),
+    ],
+}
+
 
 def _download_with_progress(url: str, dest_path: Path) -> None:
     """Download a file with console progress indicator."""
@@ -155,8 +207,65 @@ def _download_with_progress(url: str, dest_path: Path) -> None:
             temp_path.unlink(missing_ok=True)
 
 
+def download_and_install_tier(tier: ModelTier, model_dir: Path | None = None) -> bool:
+    """Download and install all models for the given tier (Req 2.3-2.5)."""
+    try:
+        from argostranslate import package  # type: ignore[import-untyped]
+    except ImportError:
+        print("[error] argostranslate not installed -- cannot download/install models", file=sys.stderr, flush=True)
+        print("  Please run: pip install -e \".[translation]\" or pip install argostranslate", file=sys.stderr, flush=True)
+        return False
+
+    entries = MODEL_REGISTRY[tier]
+    print(f"=== Downloading & Installing Argos Models (tier={tier}, {len(entries)} models) ===", flush=True)
+    cache_dir = Path(model_dir) if model_dir else (Path.home() / ".cache" / "argos-translate" / "downloads")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    success_count = 0
+    fail_count = 0
+    for profile in entries:
+        try:
+            if not profile.download_url:
+                print(f"[error] No download_url for {profile.name} (TODO HQ-1) -- skipping", file=sys.stderr, flush=True)
+                fail_count += 1
+                continue
+            dest = cache_dir / profile.name
+            try:
+                _download_with_progress(profile.download_url, dest)
+            except Exception as exc:
+                print(f"[error] Failed to download {profile.name}: {exc}", file=sys.stderr, flush=True)
+                fail_count += 1
+                continue
+            if profile.sha256 == "":
+                print(f"[warn] No expected SHA256 for {profile.name}, skipping hash check", file=sys.stderr)
+                print(f"  actual SHA256: {sha256_of(dest)}" if dest.is_file() else "  file missing after download")
+            elif not verify_model_file(dest):
+                print(f"[error] Model file verification failed for {dest.name}", file=sys.stderr, flush=True)
+                fail_count += 1
+                continue
+            try:
+                print(f"[info] Installing {dest.name} into Argos...", flush=True)
+                package.install_from_path(str(dest))
+            except Exception as exc:
+                print(f"[error] Failed to install {dest.name}: {exc}", file=sys.stderr, flush=True)
+                fail_count += 1
+                continue
+            success_count += 1
+        except Exception as exc:
+            print(f"[error] Failed to process {profile.name}: {exc}", file=sys.stderr, flush=True)
+            fail_count += 1
+            continue
+
+    print(f"[summary] tier={tier} success={success_count} failed={fail_count}", flush=True)
+    if argos_direct_available():
+        print("[SUCCESS] Argos models successfully installed and verified!")
+        return True
+    print("[ERROR] Failed to make Argos models available.", file=sys.stderr)
+    return success_count > 0 and fail_count == 0
+
+
 def download_and_install_models(model_dir: Path | None = None) -> bool:
-    """Download and install Argos direct JA<->EN models."""
+    """Download and install Argos direct JA<->EN models (backward-compat alias for standard tier)."""
     try:
         from argostranslate import package  # type: ignore[import-untyped]
     except ImportError:
@@ -258,6 +367,7 @@ def main() -> int:
     parser.add_argument("--verify-only", action="store_true", help="Only verify files and Argos index; do not attempt install or download")
     parser.add_argument("--skip-hash-check", action="store_true", help="Skip SHA256 verification (temporary until EXPECTED_SHA256 is filled; do not use in CI)")
     parser.add_argument("--require-hash", action="store_true", help="Fail if EXPECTED_SHA256 not configured (CI gate; ensures TODO K-1 is resolved)")
+    parser.add_argument("--model-tier", choices=["standard", "high-quality"], default="standard", help="Model tier to download/verify (default: standard)")
     args = parser.parse_args()
 
     # CI gate: --require-hash ensures release blocker is not bypassed
@@ -273,20 +383,25 @@ def main() -> int:
 
     # Handle download request
     if args.download:
-        dl_ok = download_and_install_models(model_dir=md)
+        dl_ok = download_and_install_tier(args.model_tier, model_dir=md)
         if not dl_ok:
             return 1
 
     ok = True
     if md:
-        print(f"Checking model_dir: {md}")
-        for name in MODELS:
-            ok &= verify_model_file(md / name, skip_hash=args.skip_hash_check)
+        print(f"Checking model_dir: {md} (tier={args.model_tier})")
+        for profile in MODEL_REGISTRY[args.model_tier]:
+            ok &= verify_model_file(md / profile.name, skip_hash=args.skip_hash_check)
     else:
         print("Checking Argos package index")
 
     if args.verify_only:
-        ok &= argos_direct_available()
+        if md:
+            pass  # already verified tier files above
+        else:
+            # Verify only files belonging to the specified tier when no model_dir:
+            # check Argos availability (tier-specific file check is covered by model_dir path).
+            ok &= argos_direct_available()
         return 0 if ok else 1
 
     # Verify Argos availability after potential install/download

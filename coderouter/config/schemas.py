@@ -2491,10 +2491,13 @@ class TranslationConfig(BaseModel):
         default=True,
         description="Enable JA↔EN translation layer. True = CodeRouter-t default (translate), False = pass-through.",
     )
-    # Literal["cpu"] is for type-checker; validator provides runtime message (S-1)
-    device: Literal["cpu"] = Field(
+    device: Literal["cpu", "cuda"] = Field(
         default="cpu",
-        description='Execution device. Only "cpu" allowed (VRAM zero guarantee). providers.yaml setting.',
+        description='Execution device. "cpu" (default) or "cuda" (requires NVIDIA GPU + ctranslate2 CUDA).',
+    )
+    model_tier: Literal["standard", "high-quality"] = Field(
+        default="standard",
+        description='Translation model tier. "standard" = Argos default, "high-quality" = OPUS-MT big.',
     )
     log_translations: bool = Field(
         default=False,
@@ -2559,8 +2562,15 @@ class TranslationConfig(BaseModel):
     @field_validator("device")
     @classmethod
     def _check_device(cls, v: str) -> str:
-        if v != "cpu":
-            raise ValueError("translation.device must be 'cpu' (VRAM zero guarantee)")
+        if v not in ("cpu", "cuda"):
+            raise ValueError(f'translation.device must be "cpu" or "cuda", got {v!r}')
+        return v
+
+    @field_validator("model_tier")
+    @classmethod
+    def _check_model_tier(cls, v: str) -> str:
+        if v not in ("standard", "high-quality"):
+            raise ValueError(f'translation.model_tier must be "standard" or "high-quality", got {v!r}')
         return v
 
 

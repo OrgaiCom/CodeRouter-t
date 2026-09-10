@@ -22,13 +22,41 @@ logger = get_logger(__name__)
 class TranslatorManager:
     """Argos Translate wrapper. CPU専用, 常駐ロード, スレッドセーフ."""
 
-    def __init__(self, model_dir: str | None = None) -> None:
+    def __init__(
+        self,
+        model_dir: str | None = None,
+        device: str = "cpu",
+        model_tier: str = "standard",
+    ) -> None:
         self._model_dir = model_dir
+        self._requested_device = device
+        self._model_tier = model_tier
+        self._effective_device: str = "cpu"
         self._lock = threading.Lock()
         self._available = False
         self._ja_en = None  # type: ignore[no-untyped-def]
         self._en_ja = None  # type: ignore[no-untyped-def]
         self._translate_module = None  # type: ignore[no-untyped-def]
+
+    def _detect_cuda(self) -> bool:
+        try:
+            from coderouter.hardware import detect_hardware
+
+            hw = detect_hardware()
+            return hw.gpu == "cuda"
+        except Exception as exc:
+            logger.warning("translation-device-detect-error", extra={"error": str(exc)})
+            return False
+
+    @property
+    def device(self) -> str:
+        """load() 完了後の実効デバイス文字列 ("cpu" or "cuda")。"""
+        return self._effective_device
+
+    @property
+    def model_tier(self) -> str:
+        """load() 完了後の実効モデルティア文字列。"""
+        return self._model_tier
 
     def load(self) -> None:
         """Load JA→EN / EN→JA direct models. Raises on failure.
@@ -41,8 +69,15 @@ class TranslatorManager:
         If installation fails, the standard Argos cache is used as
         fallback (fail-open is handled by the caller).
         """
-        # Ensure CPU
-        os.environ["ARGOS_DEVICE_TYPE"] = "cpu"
+        effective_device = self._requested_device
+        if effective_device == "cuda" and not self._detect_cuda():
+            logger.warning(
+                "translation-device-fallback",
+                extra={"requested": "cuda", "effective": "cpu"},
+            )
+            effective_device = "cpu"
+        os.environ["ARGOS_DEVICE_TYPE"] = effective_device
+        self._effective_device = effective_device
         _t0 = time.monotonic()
 
         try:
@@ -108,10 +143,9 @@ class TranslatorManager:
         # Get direct translations
         # Argos: translate.get_translation_from_codes("ja", "en") etc.
         try:
-            # Prefer device="cpu" when the installed Argos version supports it
             try:
-                ja_en = _translate.get_translation_from_codes("ja", "en", device="cpu")  # type: ignore[attr-defined,call-arg]
-                en_ja = _translate.get_translation_from_codes("en", "ja", device="cpu")  # type: ignore[attr-defined,call-arg]
+                ja_en = _translate.get_translation_from_codes("ja", "en", device=effective_device)  # type: ignore[attr-defined,call-arg]
+                en_ja = _translate.get_translation_from_codes("en", "ja", device=effective_device)  # type: ignore[attr-defined,call-arg]
             except TypeError:
                 # Older Argos (<1.11) has no device kwarg
                 ja_en = _translate.get_translation_from_codes("ja", "en")  # type: ignore[attr-defined]
@@ -138,7 +172,12 @@ class TranslatorManager:
             elapsed_ms = (time.monotonic() - _t0) * 1000
             logger.info(
                 "translation-manager-loaded",
-                extra={"model_dir": self._model_dir or "argos-cache", "elapsed_ms": round(elapsed_ms, 1)},
+                extra={
+                    "device": self._effective_device,
+                    "model_tier": self._model_tier,
+                    "model_dir": self._model_dir or "argos-cache",
+                    "elapsed_ms": round(elapsed_ms, 1),
+                },
             )
             # Startup-blocking guard: warn if model load exceeds health-check window
             if elapsed_ms > 5000:

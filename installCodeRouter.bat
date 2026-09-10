@@ -54,10 +54,24 @@ if "%DO_TRANSLATE%"=="" (
 )
 if "%DO_TRANSLATE%"=="" set DO_TRANSLATE=Y
 
-if /i "%DO_TRANSLATE%"=="Y" (
+set MODEL_TIER=standard
+if /i "%DO_TRANSLATE%"=="Y" goto :do_translate_setup
+goto :skip_translate_setup
+
+:do_translate_setup
     echo.
     echo [2/2] Checking and setting up translation models...
-    python -u scripts\setup_argos_models.py --download
+    if /i "%~1"=="-y" goto :skip_tier_prompt
+    if /i "%~1"=="/y" goto :skip_tier_prompt
+    echo.
+    echo  翻訳モデルのティアを選択してください:
+    echo    [1] Standard     - 軽量（標準 Argos モデル, 約230MB）
+    echo    [2] High-Quality - 高精度・大容量（OPUS-MT big, 約700MB以上）
+    set TIER_CHOICE=
+    set /p TIER_CHOICE="選択 [1/2] (デフォルト: 1): "
+    if "%TIER_CHOICE%"=="2" set MODEL_TIER=high-quality
+:skip_tier_prompt
+    python -u scripts\setup_argos_models.py --download --model-tier %MODEL_TIER%
     if %ERRORLEVEL% equ 0 (
         echo.
         echo [INFO] 翻訳モデルのセットアップが完了しました。
@@ -75,14 +89,17 @@ if /i "%DO_TRANSLATE%"=="Y" (
         echo.
         echo [WARN] 翻訳モデルのセットアップでエラーが発生しました。
         echo 手動で再試行する場合は以下を実行してください:
-        echo   python -u scripts\setup_argos_models.py --download
+        echo   python -u scripts\setup_argos_models.py --download --model-tier %MODEL_TIER%
     )
-) else (
+    goto :translate_setup_done
+
+:skip_translate_setup
     echo.
     echo 翻訳モデルのダウンロードをスキップしました。
     echo 後からセットアップする場合は以下を実行してください:
     echo   python -u scripts\setup_argos_models.py --download
-)
+
+:translate_setup_done
 
 echo.
 echo ============================================================
