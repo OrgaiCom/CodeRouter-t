@@ -1,4 +1,4 @@
-<h1 align="center">CodeRouter-t</h1>
+<h1 align="center">CodeRouter-t alpha</h1>
 
 <p align="center">
   <strong>Tool calling breaks when you run Claude Code on local LLMs.<br>One router fixes it.</strong>
