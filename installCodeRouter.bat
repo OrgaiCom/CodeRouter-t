@@ -39,10 +39,10 @@ echo ============================================================
 echo.
 
 echo ------------------------------------------------------------
-echo  [OPTIONAL] Translation Layer Setup (Argos Translate JA - EN)
+echo  [OPTIONAL] Translation Layer Setup
 echo ------------------------------------------------------------
-echo  CodeRouter の日本語・英語 双方向翻訳層（Argos Translate）用の
-echo  モデル（約230MB）をダウンロード＆セットアップしますか？
+echo  CodeRouter の日本語・英語 双方向翻訳層用の
+echo  モデルをダウンロード＆セットアップしますか？
 echo.
 
 set DO_TRANSLATE=
@@ -83,7 +83,7 @@ goto :skip_translate_setup
         echo ------------------------------------------------------------
         echo translation:
         echo   enabled: true
-        echo   device: cuda
+        echo   device: cpu
         echo   log_translations: false
         echo   verbose: true            # 新[translation]ペアは既定ON
         echo   log_tool_calls: true     # [tool call repair]も既定ON
@@ -130,6 +130,9 @@ goto :skip_translate_setup
     echo   log_translations: false
     echo   verbose: true
     echo   log_tool_calls: true
+    echo   max_buffer_tokens: 131072
+    echo   chunk_size_chars: 4096
+    echo   chunk_timeout_s: 10.0
     echo ------------------------------------------------------------
     goto :translate_setup_done
 
