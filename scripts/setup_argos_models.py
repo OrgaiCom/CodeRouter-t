@@ -67,6 +67,9 @@ EXPECTED_SHA256: dict[str, str] = {
     # Aliases for package.download() filenames (which drop version suffix in temporary download)
     "translate-ja_en.argosmodel": "623e3477959a815eb0a5ef53e09079ae8f1f9d3bbcd230473baf28c03fb83335",
     "translate-en_ja.argosmodel": "16300cc4eaa85320520cabcf433b63d01be40ef6966251de72043a083408f716",
+    # HQ (CodeRouter-t built 2026-09-11 via scripts/build_hq_argos_models.py)
+    "translate-ja_en-opus-mt-1_0.argosmodel": "2ce1415c67800ba9c968abf8c9a25de952e66f39ec2753542342e43546b03a61",
+    "translate-en_ja-opus-mt-1_0.argosmodel": "1b12ca29b8471cf1d41689ac578b32072e72f727457a7aa5d91956947264fdca",
 }
 
 
@@ -166,17 +169,19 @@ MODEL_REGISTRY: dict[ModelTier, list[ModelProfile]] = {
         ),
     ],
     "high-quality": [
-        # TODO(HQ-1): fill download_url / sha256 before release.
+        # TODO(HQ-1): fill download_url after Release publish. SHA256 filled 2026-09-11.
+        # NOTE: "opus-mt-tc-big" names were placeholders (no official Argos package).
+        # Built via scripts/build_hq_argos_models.py. Do NOT invent URL.
         ModelProfile(
-            name="translate-ja_en-opus-mt-tc-big.argosmodel",
+            name="translate-ja_en-opus-mt-1_0.argosmodel",
             download_url="",
-            sha256="",
+            sha256="2ce1415c67800ba9c968abf8c9a25de952e66f39ec2753542342e43546b03a61",
             recommended_device="cuda",
         ),
         ModelProfile(
-            name="translate-en_ja-opus-mt-tc-big.argosmodel",
+            name="translate-en_ja-opus-mt-1_0.argosmodel",
             download_url="",
-            sha256="",
+            sha256="1b12ca29b8471cf1d41689ac578b32072e72f727457a7aa5d91956947264fdca",
             recommended_device="cuda",
         ),
     ],

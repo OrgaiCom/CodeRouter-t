@@ -97,8 +97,11 @@ docs/articles/
 .env.publish.tpl
 .env.tpl
 
-# FUSE / virtiofs artifacts
-.fuse_hidden*
+# ============================================================
+# Local model artifacts — built/downloaded, NEVER commit
+# (standard DL + HQ現地ビルド models/hq/*.argosmodel)
+# ============================================================
+models/
 
 # tool-repair bench: locally generated results (curated evidence lives in results/)
 benchmarks/tool-repair/results_*.json
