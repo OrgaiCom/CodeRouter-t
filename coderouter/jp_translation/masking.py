@@ -131,8 +131,13 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 
 _PLACEHOLDER_PREFIX = "__CR_PROTECTED_"
 _PLACEHOLDER_SUFFIX = "__"
-# Regex to find placeholders during unmasking
+# Regex to find placeholders during unmasking (strict)
 _PLACEHOLDER_RE = re.compile(r"__CR_PROTECTED_(\d+)__")
+
+# Regex to find mutated placeholders (fuzzy: missing trailing underscores, spaces)
+_PLACEHOLDER_FUZZY_RE = re.compile(
+    r"__\s*CR\s*_?\s*PROTECTED\s*_?\s*(\d+)(?:\s*__|\s*_|\b)"
+)
 
 
 def mask_text(text: str) -> tuple[str, dict[int, str]]:
@@ -146,31 +151,27 @@ def mask_text(text: str) -> tuple[str, dict[int, str]]:
     masked = text
     index = 0
 
-    # We collect all matches first with priority, then apply non-overlapping
-    # replacement to avoid double-masking already replaced regions.
-    # Simpler: iterative regex over current masked string, but skip placeholder region.
-    # We do sequential scan per pattern over the evolving string.
-
+    # Sequential scan per pattern over the evolving string.
+    # To prevent nesting/double-masking, any match that contains or overlaps
+    # an existing placeholder is strictly skipped.
     for _name, pattern in _PATTERNS:
-        # Find all non-overlapping matches in current masked text
-        # We need to avoid matching inside existing placeholders.
-        # Since placeholder format is alphabet+underscore+digits, we skip it
-        # by checking if placeholder already occupies region.
+        placeholder_spans = [m.span() for m in _PLACEHOLDER_RE.finditer(masked)]
+
         new_masked_parts: list[str] = []
         last_end = 0
         found_any = False
         for m in pattern.finditer(masked):
             start, end = m.span()
             token = m.group(0)
-            # Skip if this token is already a placeholder
-            if token.startswith(_PLACEHOLDER_PREFIX):
+
+            # Skip if this token is or contains a placeholder
+            if _PLACEHOLDER_PREFIX in token:
                 continue
+
             # Skip if token overlaps an existing placeholder region
-            # Check surrounding text for placeholder prefix
-            # More precise: ensure the matched region does not intersect placeholder RE
-            # Since we rebuild sequentially, this is implicitly handled
-            # but we add guard: if token is too short or pure English common word, skip
-            # For CLI pattern, keep as-is; for identifier patterns, additional filter
+            if any(not (end <= p_start or start >= p_end) for p_start, p_end in placeholder_spans):
+                continue
+
             if _name.startswith("identifier"):
                 # Don't mask very short identifiers that are likely English words
                 # but our camel/snake/dotted/call patterns are already conservative
@@ -194,9 +195,10 @@ def unmask_text(text: str, mapping: dict[int, str]) -> str:
     """Restore placeholders to original tokens.
 
     Uses regex replacement to avoid __CR_PROTECTED_10__ being broken by
-    __CR_PROTECTED_1__ partial match. Falls back to descending order if needed.
-    Also warns (via return) if Argos mutated the placeholder — caller may
-    decide to fallback to original.
+    __CR_PROTECTED_1__ partial match.
+    Supports fuzzy matching for mutated placeholders (e.g. dropped trailing
+    underscores from Argos Translate).
+    Performs recursive unmasking (up to 5 passes) in case of nested placeholders.
     """
     if not mapping:
         return text
@@ -205,13 +207,23 @@ def unmask_text(text: str, mapping: dict[int, str]) -> str:
         idx = int(m.group(1))
         return mapping.get(idx, m.group(0))
 
-    return _PLACEHOLDER_RE.sub(_repl, text)
+    current = text
+    for _ in range(5):
+        # 1. Strict match pass
+        next_text = _PLACEHOLDER_RE.sub(_repl, current)
+        # 2. Fuzzy match pass (for mutations like __CR_PROTECTED_3 without trailing __)
+        next_text = _PLACEHOLDER_FUZZY_RE.sub(_repl, next_text)
+        if next_text == current:
+            break
+        current = next_text
+
+    return current
 
 
 def has_placeholder_mutation(text: str, mapping: dict[int, str]) -> bool:
     """Check if placeholders were mutated by translation (e.g. SentencePiece split).
 
-    Returns True if any expected placeholder is missing.
+    Returns True if any expected placeholder is missing in strict format.
     The 50% threshold fallback is handled in translator.py, not here.
     """
     if not mapping:
@@ -219,3 +231,4 @@ def has_placeholder_mutation(text: str, mapping: dict[int, str]) -> bool:
     found = set(int(x) for x in _PLACEHOLDER_RE.findall(text))
     expected = set(mapping.keys())
     return bool(expected - found)
+

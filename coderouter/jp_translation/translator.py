@@ -170,9 +170,15 @@ def _translate_with_protection(
         # Safer to return original text (transparent fallback) — but we try unmask first.
         # If many placeholders lost, original is safer.
         # Heuristic: if >50% placeholders lost, fallback to original
-        from .masking import _PLACEHOLDER_RE
+        from .masking import _PLACEHOLDER_FUZZY_RE, _PLACEHOLDER_RE
 
-        found = len(_PLACEHOLDER_RE.findall(translated_masked))
+        found_ids = set(int(x) for x in _PLACEHOLDER_RE.findall(translated_masked))
+        for m in _PLACEHOLDER_FUZZY_RE.finditer(translated_masked):
+            idx_str = m.group(1)
+            if idx_str is not None:
+                found_ids.add(int(idx_str))
+
+        found = len(found_ids)
         # Use <= 0.5 (not <) so that losing exactly half the placeholders
         # also triggers the safe fallback (e.g. 1 lost out of 2 = 50% loss).
         if found <= len(mapping) * 0.5:
@@ -188,7 +194,24 @@ def _translate_with_protection(
             logger.warning("translation-fallback", extra=extra2)
             return text
 
-    return unmask_text(translated_masked, mapping)
+    unmasked = unmask_text(translated_masked, mapping)
+
+    # Post-unmask safety guard: if unmasked text still leaks raw placeholder prefix,
+    # fallback to original text to prevent showing broken placeholders to user
+    from .masking import _PLACEHOLDER_PREFIX
+
+    if mapping and _PLACEHOLDER_PREFIX in unmasked:
+        extra_leak = {
+            "direction": direction,
+            "reason": "placeholder-leak-fallback",
+            "backend": backend,
+        }
+        if chunk_index is not None:
+            extra_leak["chunk_index"] = chunk_index
+        logger.warning("translation-fallback", extra=extra_leak)
+        return text
+
+    return unmasked
 
 
 def _translate_chunked(

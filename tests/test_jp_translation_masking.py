@@ -363,3 +363,47 @@ def test_response_translation_skips_tool_use():
     assert result.content[1]["type"] == "tool_use"
     assert result.content[1]["name"] == "edit_file"
     assert result.content[0]["text"] == "日本語に翻訳"
+
+
+def test_mask_text_prevents_nested_placeholder_on_dotted_identifier():
+    """Dotted identifier matching must not consume or nest existing placeholders."""
+    text = "Check mentions.`requirements.txt` here."
+    masked, mapping = mask_text(text)
+    assert len(mapping) == 1
+    assert mapping[0] == "`requirements.txt`"
+    assert "mentions.__CR_PROTECTED_0__" in masked
+    unmasked = unmask_text(masked, mapping)
+    assert unmasked == text
+
+
+def test_unmask_mutated_missing_trailing_underscores():
+    """Argos dropping trailing '__' (e.g. __CR_PROTECTED_3) must be restored."""
+    mapping = {3: "`CLAUDE.md`"}
+    text = "詳細は __CR_PROTECTED_3 のガイドラインをご参照ください。"
+    unmasked = unmask_text(text, mapping)
+    assert unmasked == "詳細は `CLAUDE.md` のガイドラインをご参照ください。"
+
+
+def test_unmask_mutated_with_spaces():
+    """SentencePiece splitting placeholders into spaced tokens must be restored."""
+    mapping = {0: "src/main.ts", 1: "getUser()"}
+    text = "Please check __ CR PROTECTED 0 __ and __ CR_PROTECTED_1 __."
+    unmasked = unmask_text(text, mapping)
+    assert unmasked == "Please check src/main.ts and getUser()."
+
+
+def test_translate_fallback_on_unmask_leak():
+    """If an unrecoverable corrupted placeholder remains, fallback to original."""
+    from coderouter.jp_translation.translator import _translate_with_protection
+    from unittest.mock import Mock
+
+    manager = Mock()
+    manager.is_available.return_value = True
+    # Simulate unrecoverable mutation where ID is lost or distorted beyond recognition
+    # but still looks like a raw placeholder prefix
+    manager.translate_en_to_ja.return_value = "これは __CR_PROTECTED_UNKNOWN のテストです"
+
+    text = "This is a `test_sample` guidance."
+    result = _translate_with_protection(text, "en_to_ja", manager)
+    # Should fallback to original text instead of leaking __CR_PROTECTED_
+    assert result == text
