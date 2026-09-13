@@ -2531,9 +2531,9 @@ class TranslationConfig(BaseModel):
         description="Model name sent to the CAT-Translate server.",
     )
     cat_timeout_s: float = Field(default=30.0, ge=1.0, le=600.0)
-    cat_max_new_tokens: int = Field(default=512, ge=16, le=8192)
+    cat_max_new_tokens: int = Field(default=2048, ge=16, le=8192)
     cat_fallback_to_argos: bool = Field(
-        default=False,
+        default=True,
         description="If CAT server startup fails, fall back to the existing Argos backend.",
     )
     # v2.18: 128K token support — chunked translation

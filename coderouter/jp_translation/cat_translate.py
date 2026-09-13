@@ -13,6 +13,18 @@ _DIRECTIONS = {
 }
 
 
+def _strip_fences(content: str) -> str:
+    """Remove a wrapping ``` fence if the model echoed one around the translation."""
+    stripped = content.strip()
+    if stripped.startswith("```") and stripped.endswith("```") and len(stripped) > 6:
+        lines = stripped.splitlines()
+        # Drop opening fence (``` or ```lang) and closing fence.
+        body = "\n".join(lines[1:-1]).strip()
+        if body:
+            return body
+    return stripped
+
+
 class CatTranslateBackend:
     """Small, synchronous client; model inference stays outside CodeRouter."""
 
@@ -48,6 +60,13 @@ class CatTranslateBackend:
             return text
         source, target = _DIRECTIONS[direction]
         prompt = f"Translate the following {source} text into {target}.\n\n{text}"
+        # 4096-char chunks (~2k tokens) need a proportionally large output
+        # budget; the fixed default (512) would truncate long chunks.
+        # Rough estimate: 1 char ~= 2 tokens worst case, capped at 8192 (model ctx).
+        max_tokens = max(self.max_new_tokens, min(8192, len(text) * 2 + 64))
+        # Leave room for the prompt itself inside the 8192 context window
+        # (conservative 1 char ~= 1 token for the input side).
+        max_tokens = min(max_tokens, max(256, 8192 - len(text)))
         response = self._client.post(
             f"{self.endpoint}/chat/completions",
             json={
@@ -55,7 +74,7 @@ class CatTranslateBackend:
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.0,
                 "top_p": 1.0,
-                "max_tokens": self.max_new_tokens,
+                "max_tokens": max_tokens,
                 "stream": False,
             },
         )
@@ -67,7 +86,7 @@ class CatTranslateBackend:
             raise RuntimeError("CAT-Translate returned an invalid response") from exc
         if not isinstance(content, str) or not content.strip():
             raise RuntimeError("CAT-Translate returned empty translation")
-        return content.strip()
+        return _strip_fences(content.strip())
 
     def close(self) -> None:
         self._available = False

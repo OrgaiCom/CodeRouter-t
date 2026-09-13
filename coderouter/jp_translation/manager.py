@@ -31,8 +31,8 @@ class TranslatorManager:
         cat_endpoint: str = "http://127.0.0.1:8080/v1",
         cat_model: str = "CAT-Translate-1.4b",
         cat_timeout_s: float = 30.0,
-        cat_max_new_tokens: int = 512,
-        cat_fallback_to_argos: bool = False,
+        cat_max_new_tokens: int = 2048,
+        cat_fallback_to_argos: bool = True,
     ) -> None:
         self._model_dir = model_dir
         self._requested_device = device

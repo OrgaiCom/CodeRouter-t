@@ -41,7 +41,7 @@ providers:
   - name: ollama-haiku-model
     kind: openai_compat
     base_url: http://localhost:11434/v1
-    model: hf.co/bartowski/Ling-3.0-tiny-GGUF:Q4_K_M        # ※実際に所持しているHaiku用モデル名に変更してください
+    model: gemma4:e4b-it-qat        # ※実際に所持しているHaiku用モデル名に変更してください
     paid: false
     timeout_s: 60
     capabilities:
@@ -74,10 +74,17 @@ log_format: pretty  # json | pretty
 
 translation:
   enabled: true
-  device: cuda
+  device: cpu
+#  device: cuda
   log_translations: false
   verbose: true            # 新[translation]ペアは既定ON
   log_tool_calls: true     # [tool call repair]も既定ON
   max_buffer_tokens: 131072
   chunk_size_chars: 4096
   chunk_timeout_s: 10.0
+  # CAT-Translate 1.4B (llama-server経由) を使う場合の例:
+  backend: cat_translate
+  cat_endpoint: http://127.0.0.1:8080/v1
+  cat_model: CAT-Translate-1.4b
+  cat_max_new_tokens: 2048
+  cat_fallback_to_argos: true

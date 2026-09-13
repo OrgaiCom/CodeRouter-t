@@ -2,7 +2,12 @@ rem @echo off
 cd /d "%~dp0"
 
 if not exist "%USERPROFILE%\.coderouter-t" mkdir "%USERPROFILE%\.coderouter-t"
-copy /Y "%~dp0providers.yaml" "%USERPROFILE%\.coderouter-t\."
+rem 既存の利用者設定を上書きしない: providers.yaml が無い初回のみコピーする
+if not exist "%USERPROFILE%\.coderouter-t\providers.yaml" (
+    copy /Y "%~dp0providers.yaml" "%USERPROFILE%\.coderouter-t\."
+) else (
+    echo [INFO] 既存の %USERPROFILE%\.coderouter-t\providers.yaml を保持します。
+)
 
 :: 1. new cmd and llamaServe.bat (only when CAT-Translate is installed)
 if exist "%~dp0models\cat-translate\CAT-Translate-1.4b.Q4_K_M.gguf" (
@@ -27,8 +32,9 @@ exit /b 0
 
 :wait_for_llama
 set "LLAMA_WAIT_COUNT=0"
+if not defined LLAMA_PORT set "LLAMA_PORT=8080"
 :wait_for_llama_loop
-curl.exe -fsS "http://127.0.0.1:8080/health" >nul 2>&1
+curl.exe -fsS "http://127.0.0.1:%LLAMA_PORT%/health" >nul 2>&1
 if not errorlevel 1 (
     echo [INFO] llama-server の起動を確認しました。
     exit /b 0

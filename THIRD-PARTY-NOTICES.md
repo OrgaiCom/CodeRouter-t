@@ -1,20 +1,23 @@
 # 第三者コンポーネント
 
+> 注意: 以下のライセンス表示は実装時点のモデルカード・配布ページ記載に基づくものです。
+> 利用前に各公式ページで再確認してください（実装日: 2026-09-13、インターネット未接続環境では再検証不可）。
+
 ## CAT-Translate-1.4B
 
-- 著作権者: CyberAgent AI Lab
-- ライセンス: MIT
+- 著作権者: CyberAgent（モデルカード表記に基づく）
+- ライセンス: モデルカード表記ではMIT（利用前に再確認すること）
 - 公式モデル: <https://huggingface.co/cyberagent/CAT-Translate-1.4b>
 - CodeRouterにはモデルファイルを同梱しません。`scripts/download_cat_translate.py` で利用者が取得します。
 - モデルカード記載の推奨プロンプトは、`Translate the following {src_lang} text into {tgt_lang}.` 形式です。
-- ベースモデル `sbintuitions/sarashina2.2-1b` もモデルカード上はMITライセンスです。
+- ベースモデル `sbintuitions/sarashina2.2-1b` のライセンスもモデルカード記載に従います（利用前に再確認すること）。
 
 ## CAT-Translate GGUF量子化版
 
 - 配布元: mradermacher
 - モデル: `mradermacher/CAT-Translate-1.4b-GGUF`
 - 用途: `installCodeRouter.bat cat` が取得するllama.cpp用GGUF
-- ライセンス表示: 配布ページではMITと表示されています。元モデルはCyberAgentのCAT-Translate-1.4Bです。
+- ライセンス表示: 配布ページの表示に従います（元モデルはCyberAgentのCAT-Translate-1.4Bのため、元モデルのライセンス条件も継承される前提で利用前に両方を確認すること）。
 - 配布ページ: <https://huggingface.co/mradermacher/CAT-Translate-1.4b-GGUF>
 - CodeRouterはこのモデルファイルをGitリポジトリへ同梱しません。
 

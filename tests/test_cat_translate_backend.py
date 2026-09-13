@@ -46,6 +46,45 @@ def test_cat_backend_rejects_missing_translation_content() -> None:
         backend.translate("こんにちは", "ja_to_en")
 
 
+def test_cat_backend_scales_max_tokens_for_long_chunks() -> None:
+    bodies: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(request.read().decode("utf-8"))
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "translated"}}]},
+            request=request,
+        )
+
+    backend = CatTranslateBackend(
+        endpoint="http://cat.test/v1",
+        max_new_tokens=512,
+        transport=httpx.MockTransport(handler),
+    )
+    backend.translate("あ" * 2000, "ja_to_en")
+
+    import json as _json
+
+    payload = _json.loads(bodies[0])
+    assert payload["max_tokens"] > 512
+    assert payload["max_tokens"] <= 8192
+
+
+def test_cat_backend_strips_code_fence_wrapping() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "```\nPlease fix the bug.\n```"}}]},
+            request=request,
+        )
+
+    backend = CatTranslateBackend(
+        endpoint="http://cat.test/v1", transport=httpx.MockTransport(handler)
+    )
+    assert backend.translate("バグを修正してください。", "ja_to_en") == "Please fix the bug."
+
+
 def test_translation_config_defaults_to_argos_and_accepts_cat_translate() -> None:
     assert TranslationConfig().backend == "argos"
     config = TranslationConfig(backend="cat_translate", cat_endpoint="http://127.0.0.1:8080/v1")

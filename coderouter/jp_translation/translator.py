@@ -127,6 +127,10 @@ def _translate_with_protection(
 
     masked, mapping = mask_text(text)
 
+    # Backend name for log observability (Argos/CAT). Kept as extra field;
+    # reason strings stay stable so existing log parsers keep working.
+    backend = getattr(manager, "_backend", "argos")
+
     # If masked text has no Japanese (JA→EN) we already checked outside,
     # but keep for EN→JA always translate.
     try:
@@ -135,7 +139,7 @@ def _translate_with_protection(
         else:
             translated_masked = manager.translate_en_to_ja(masked)
     except Exception as exc:
-        extra = {"direction": direction, "reason": "argos-error", "error": str(exc)}
+        extra = {"direction": direction, "reason": "argos-error", "backend": backend, "error": str(exc)}
         if chunk_index is not None:
             extra["chunk_index"] = chunk_index
         logger.warning("translation-failed", extra=extra)
@@ -143,7 +147,7 @@ def _translate_with_protection(
 
     # Guard: if placeholder was mutated (SentencePiece split etc.), fallback to original
     if mapping and has_placeholder_mutation(translated_masked, mapping):
-        extra = {"direction": direction, "reason": "placeholder-mutated", "expected": len(mapping)}
+        extra = {"direction": direction, "reason": "placeholder-mutated", "backend": backend, "expected": len(mapping)}
         if chunk_index is not None:
             extra["chunk_index"] = chunk_index
         logger.warning(
@@ -164,6 +168,7 @@ def _translate_with_protection(
             extra2 = {
                 "direction": direction,
                 "reason": "placeholder-mutated-heavy-fallback",
+                "backend": backend,
                 "expected": len(mapping),
                 "found": found,
             }

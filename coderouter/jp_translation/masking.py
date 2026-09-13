@@ -44,14 +44,24 @@ _CODE_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
 _FRONTMATTER_RE = re.compile(r"\A---[ \t]*\n.*?\n---[ \t]*(?:\r?\n)?", re.DOTALL)
 _INLINE_CODE_RE = re.compile(r"`[^`]+`")
 _HTML_TAG_RE = re.compile(r"</?[A-Za-z][^>]*?>")
-_LATEX_RE = re.compile(r"\$\$.*?\$\$|\\\[.*?\\\]|\\\(.*?\\\)", re.DOTALL)
+_LATEX_RE = re.compile(
+    r"\$\$.*?\$\$|\\\[.*?\\\]|\\\(.*?\\\)"
+    # Single-dollar inline math only when it carries TeX cues (^ _ \ { })
+    # so currency like "$100" is never masked. Covers "$x^2$".
+    r"|\$[^$\n]*?[\\^_{}][^$\n]*?\$",
+    re.DOTALL,
+)
 _HEADING_MARKER_RE = re.compile(r"(?m)^[ \t]{0,3}#{1,6}[ \t]+")
 _LIST_MARKER_RE = re.compile(r"(?m)^[ \t]+(?:[-*+]|\d+[.)])[ \t]+|^[ \t]*(?:[-*+]|\d+[.)])[ \t]+")
 _BLOCKQUOTE_MARKER_RE = re.compile(r"(?m)^[ \t]*(?:>[ \t]*)+")
 _TABLE_SEPARATOR_RE = re.compile(
     r"(?m)^[ \t]*\|?[ \t]*:?-{3,}:?[ \t]*(?:\|[ \t]*:?-{3,}:?[ \t]*)+\|?[ \t]*$"
 )
-_TABLE_PIPE_RE = re.compile(r"(?m)(?<=\S)[ \t]*\|[ \t]*(?=\S|$)|^[ \t]*\||\|[ \t]*(?=\n|$)")
+# NOTE: cell "|" pipes are intentionally NOT masked. They stay as GFM structure
+# so a whole table remains one translation unit (1 call, not 1 call per cell).
+# Only the separator row (no natural language) is protected above.
+_TASK_CHECKBOX_RE = re.compile(r"(?m)^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\[[ xX]\](?=[ \t])")
+_STRIKETHROUGH_DELIM_RE = re.compile(r"~~")
 _URL_RE = re.compile(r"https?://\S+|file://\S+")
 # Windows: C:\Users\...  and D:\path\to\file.ts
 _WINDOWS_PATH_RE = re.compile(
@@ -100,10 +110,12 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("latex", _LATEX_RE),
     ("html_tag", _HTML_TAG_RE),
     ("heading_marker", _HEADING_MARKER_RE),
+    # Task checkbox before generic list marker so "- [ ]" is kept as one unit.
+    ("task_checkbox", _TASK_CHECKBOX_RE),
     ("list_marker", _LIST_MARKER_RE),
     ("blockquote_marker", _BLOCKQUOTE_MARKER_RE),
     ("table_separator", _TABLE_SEPARATOR_RE),
-    ("table_pipe", _TABLE_PIPE_RE),
+    ("strikethrough_delim", _STRIKETHROUGH_DELIM_RE),
     ("url", _URL_RE),
     ("windows_path", _WINDOWS_PATH_RE),
     ("posix_path", _POSIX_PATH_RE),

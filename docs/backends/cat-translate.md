@@ -11,9 +11,11 @@ translation:
   cat_endpoint: http://127.0.0.1:8080/v1
   cat_model: CAT-Translate-1.4b
   cat_timeout_s: 30
-  cat_max_new_tokens: 512
+  cat_max_new_tokens: 2048
   cat_fallback_to_argos: true
 ```
+
+CAT利用時は `cat_fallback_to_argos: true` (既定) にしておくと、llama-server不在時に既存Argosへ自動フォールバックします。
 
 モデルファイルはリポジトリへ含めません。Windowsでは、CodeRouterのルートで次を実行すると、量子化済みGGUFとllama.cppのセットアップを行えます。
 

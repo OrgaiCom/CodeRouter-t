@@ -98,6 +98,13 @@ docs/articles/
 .env.tpl
 
 # ============================================================
+# Local operator config — machine-specific, NEVER commit
+# (root providers.yaml holds personal Ollama model names;
+#  shared templates live in examples/)
+# ============================================================
+/providers.yaml
+
+# ============================================================
 # Local model artifacts — built/downloaded, NEVER commit
 # (standard DL + HQ現地ビルド models/hq/*.argosmodel)
 # ============================================================

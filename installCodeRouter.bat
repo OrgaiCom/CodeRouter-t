@@ -56,12 +56,15 @@ if "%DO_TRANSLATE%"=="" set DO_TRANSLATE=Y
 
 set MODEL_TIER=standard
 set TRANSLATION_BACKEND=argos
+if /i "%~1"=="cat" set TRANSLATION_BACKEND=cat_translate
+if /i "%~2"=="cat" set TRANSLATION_BACKEND=cat_translate
 if /i "%DO_TRANSLATE%"=="Y" goto :do_translate_setup
 goto :skip_translate_setup
 
 :do_translate_setup
     echo.
     echo [2/2] Checking and setting up translation models...
+    if "%TRANSLATION_BACKEND%"=="cat_translate" goto :cat_translate_setup
     if /i "%~1"=="-y" goto :skip_tier_prompt
     if /i "%~1"=="/y" goto :skip_tier_prompt
     echo.
