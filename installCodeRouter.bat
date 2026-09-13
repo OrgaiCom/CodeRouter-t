@@ -41,8 +41,8 @@ echo.
 echo ------------------------------------------------------------
 echo  [OPTIONAL] Translation Layer Setup
 echo ------------------------------------------------------------
-echo  CodeRouter の日本語・英語 双方向翻訳層用の
-echo  モデルをダウンロード＆セットアップしますか？
+echo  Download and set up models for CodeRouter's JA-EN bidirectional
+echo  translation layer?
 echo.
 
 set DO_TRANSLATE=
@@ -50,7 +50,7 @@ if /i "%~1"=="-y" set DO_TRANSLATE=Y
 if /i "%~1"=="/y" set DO_TRANSLATE=Y
 
 if "%DO_TRANSLATE%"=="" (
-    set /p DO_TRANSLATE="セットアップを実行しますか？ [Y/n]: "
+    set /p DO_TRANSLATE="Run setup? [Y/n]: "
 )
 if "%DO_TRANSLATE%"=="" set DO_TRANSLATE=Y
 
@@ -68,12 +68,12 @@ goto :skip_translate_setup
     if /i "%~1"=="-y" goto :skip_tier_prompt
     if /i "%~1"=="/y" goto :skip_tier_prompt
     echo.
-    echo  翻訳バックエンドを選択してください:
-    echo    [1] Argos Standard      - 軽量・CPU向け (約230MB)
-    echo    [2] Argos High-Quality  - OPUS-MTベース (約1GB、構築に時間がかかります)
-    echo    [3] CAT-Translate 1.4B - llama-server + GGUF (約931MB)
+    echo  Select a translation backend:
+    echo    [1] Argos Standard      - Lightweight, for CPU (about 230MB)
+    echo    [2] Argos High-Quality  - OPUS-MT based (about 1GB, takes time to build)
+    echo    [3] CAT-Translate 1.4B - llama-server + GGUF (about 931MB)
     set BACKEND_CHOICE=
-    set /p BACKEND_CHOICE="選択 [1/2/3] (デフォルト: 1): "
+    set /p BACKEND_CHOICE="Select [1/2/3] (default: 1): "
     if "%BACKEND_CHOICE%"=="2" set MODEL_TIER=high-quality
     if "%BACKEND_CHOICE%"=="3" set TRANSLATION_BACKEND=cat_translate
 :skip_tier_prompt
@@ -84,64 +84,64 @@ goto :skip_translate_setup
     python -u scripts\setup_argos_models.py --download --model-tier standard
     if %ERRORLEVEL% equ 0 (
         echo.
-        echo [INFO] 翻訳モデルのセットアップが完了しました。
+        echo [INFO] Translation model setup complete.
         echo.
-        echo 【ヒント】翻訳層を有効化するには providers.yaml に以下を設定してください:
+        echo [TIP] To enable the translation layer, set the following in providers.yaml:
         echo ------------------------------------------------------------
         echo translation:
         echo   enabled: true
         echo   device: cpu
         echo   log_translations: false
-        echo   verbose: true            # 新[translation]ペアは既定ON
-        echo   log_tool_calls: true     # [tool call repair]も既定ON
+        echo   verbose: true            # new [translation] pairs are ON by default
+        echo   log_tool_calls: true     # [tool call repair] is also ON by default
         echo   max_buffer_tokens: 131072
         echo   chunk_size_chars: 4096
         echo   chunk_timeout_s: 10.0
         echo ------------------------------------------------------------
     ) else (
         echo.
-        echo [WARN] 翻訳モデルのセットアップでエラーが発生しました。
-        echo 手動で再試行する場合は以下を実行してください:
+        echo [WARN] An error occurred while setting up translation models.
+        echo To retry manually, run:
         echo   python -u scripts\setup_argos_models.py --download --model-tier standard
     )
     goto :translate_setup_done
 
 :cat_translate_setup
     echo.
-    echo [CAT] CAT-Translate 1.4B + llama-server をセットアップします。
-    echo [CAT] 量子化済みGGUF (Q4_K_M, 約931MB) を取得します。
+    echo [CAT] Setting up CAT-Translate 1.4B + llama-server.
+    echo [CAT] Downloading quantized GGUF (Q4_K_M, about 931MB).
     echo.
     python -m pip install --upgrade "huggingface_hub[hf_transfer]"
     if %ERRORLEVEL% neq 0 (
-        echo [WARN] huggingface_hub のインストールに失敗しました。
+        echo [WARN] Failed to install huggingface_hub.
         goto :translate_setup_done
     )
     if not exist "models\cat-translate\CAT-Translate-1.4b.Q4_K_M.gguf" (
         python -u gguf_dl.py mradermacher/CAT-Translate-1.4b-GGUF CAT-Translate-1.4b.Q4_K_M.gguf --dest models\cat-translate -y
         if errorlevel 1 (
-            echo [WARN] CAT-Translate GGUF の取得に失敗しました。
+            echo [WARN] Failed to download CAT-Translate GGUF.
             goto :translate_setup_done
         )
     ) else (
-        echo [CAT] 既存のGGUFを使用します。
+        echo [CAT] Using existing GGUF.
     )
     where llama-server.exe >nul 2>&1
     if errorlevel 1 (
         where winget.exe >nul 2>&1
         if not errorlevel 1 (
-            echo [CAT] llama.cpp をインストールします。
+            echo [CAT] Installing llama.cpp.
             winget install --id ggml.llamacpp --exact --accept-package-agreements --accept-source-agreements
         ) else (
-            echo [WARN] winget が見つかりません。llama.cpp を手動でインストールしてください。
+            echo [WARN] winget not found. Please install llama.cpp manually.
             echo        https://github.com/ggml-org/llama.cpp/releases
         )
     )
     echo.
-    echo [CAT] セットアップが完了しました。
-    echo [CAT] サーバー起動例:
+    echo [CAT] Setup complete.
+    echo [CAT] Example server launch:
     echo   llama-server.exe -m models\cat-translate\CAT-Translate-1.4b.Q4_K_M.gguf --host 127.0.0.1 --port 8080 -c 8192
     echo.
-    echo [CAT] providers.yaml 設定例:
+    echo [CAT] providers.yaml example:
     echo ------------------------------------------------------------
     echo translation:
     echo   enabled: true
@@ -191,8 +191,8 @@ goto :skip_translate_setup
 
 :skip_translate_setup
     echo.
-    echo 翻訳モデルのダウンロードをスキップしました。
-    echo 後からセットアップする場合は以下を実行してください:
+    echo Skipped downloading translation models.
+    echo To set up later, run:
     echo   python -u scripts\setup_argos_models.py --download
 
 :translate_setup_done
