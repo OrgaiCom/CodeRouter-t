@@ -2491,6 +2491,10 @@ class TranslationConfig(BaseModel):
         default=True,
         description="Enable JA↔EN translation layer. True = CodeRouter-t default (translate), False = pass-through.",
     )
+    backend: Literal["argos", "cat_translate"] = Field(
+        default="argos",
+        description="Translation backend. Argos remains the backward-compatible default; CAT uses an external llama-server.",
+    )
     device: Literal["cpu", "cuda"] = Field(
         default="cpu",
         description='Execution device. "cpu" (default) or "cuda" (requires NVIDIA GPU + ctranslate2 CUDA).',
@@ -2516,6 +2520,21 @@ class TranslationConfig(BaseModel):
     model_dir: str | None = Field(
         default=None,
         description="Argos model directory. None = Argos standard cache.",
+    )
+    cat_endpoint: str = Field(
+        default="http://127.0.0.1:8080/v1",
+        description="OpenAI-compatible base URL for a CAT-Translate llama-server.",
+    )
+    cat_model: str = Field(
+        default="CAT-Translate-1.4b",
+        min_length=1,
+        description="Model name sent to the CAT-Translate server.",
+    )
+    cat_timeout_s: float = Field(default=30.0, ge=1.0, le=600.0)
+    cat_max_new_tokens: int = Field(default=512, ge=16, le=8192)
+    cat_fallback_to_argos: bool = Field(
+        default=False,
+        description="If CAT server startup fails, fall back to the existing Argos backend.",
     )
     # v2.18: 128K token support — chunked translation
     max_buffer_tokens: int = Field(

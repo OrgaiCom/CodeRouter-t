@@ -279,6 +279,12 @@ def create_app(config_path: str | None = None) -> FastAPI:
                     model_dir=getattr(tcfg, "model_dir", None),
                     device=getattr(tcfg, "device", "cpu"),
                     model_tier=getattr(tcfg, "model_tier", "standard"),
+                    backend=getattr(tcfg, "backend", "argos"),
+                    cat_endpoint=getattr(tcfg, "cat_endpoint", "http://127.0.0.1:8080/v1"),
+                    cat_model=getattr(tcfg, "cat_model", "CAT-Translate-1.4b"),
+                    cat_timeout_s=getattr(tcfg, "cat_timeout_s", 30.0),
+                    cat_max_new_tokens=getattr(tcfg, "cat_max_new_tokens", 512),
+                    cat_fallback_to_argos=getattr(tcfg, "cat_fallback_to_argos", False),
                 )
                 _tr_start = _time.monotonic()
                 # load() is sync blocking (Argos/CTranslate2 init). In lifespan async context

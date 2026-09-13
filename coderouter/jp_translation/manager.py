@@ -27,16 +27,31 @@ class TranslatorManager:
         model_dir: str | None = None,
         device: str = "cpu",
         model_tier: str = "standard",
+        backend: str = "argos",
+        cat_endpoint: str = "http://127.0.0.1:8080/v1",
+        cat_model: str = "CAT-Translate-1.4b",
+        cat_timeout_s: float = 30.0,
+        cat_max_new_tokens: int = 512,
+        cat_fallback_to_argos: bool = False,
     ) -> None:
         self._model_dir = model_dir
         self._requested_device = device
         self._model_tier = model_tier
+        if backend not in ("argos", "cat_translate"):
+            raise ValueError(f"unsupported translation backend: {backend}")
+        self._backend = backend
+        self._cat_endpoint = cat_endpoint
+        self._cat_model = cat_model
+        self._cat_timeout_s = cat_timeout_s
+        self._cat_max_new_tokens = cat_max_new_tokens
+        self._cat_fallback_to_argos = cat_fallback_to_argos
         self._effective_device: str = "cpu"
         self._lock = threading.Lock()
         self._available = False
         self._ja_en = None  # type: ignore[no-untyped-def]
         self._en_ja = None  # type: ignore[no-untyped-def]
         self._translate_module = None  # type: ignore[no-untyped-def]
+        self._cat_backend = None  # type: ignore[no-untyped-def]
 
     def _detect_cuda(self) -> bool:
         try:
@@ -69,6 +84,40 @@ class TranslatorManager:
         If installation fails, the standard Argos cache is used as
         fallback (fail-open is handled by the caller).
         """
+        if self._backend == "cat_translate":
+            cat = None
+            try:
+                from .cat_translate import CatTranslateBackend
+
+                cat = CatTranslateBackend(
+                    endpoint=self._cat_endpoint,
+                    model=self._cat_model,
+                    timeout_s=self._cat_timeout_s,
+                    max_new_tokens=self._cat_max_new_tokens,
+                )
+                cat.load()
+                self._cat_backend = cat
+                self._available = True
+                logger.info(
+                    "translation-manager-loaded",
+                    extra={"backend": "cat_translate", "endpoint": self._cat_endpoint, "model": self._cat_model},
+                )
+                return
+            except Exception as exc:
+                self._available = False
+                if cat is not None:
+                    cat.close()
+                if self._cat_fallback_to_argos:
+                    logger.warning(
+                        "cat-translate-unavailable-fallback-argos",
+                        extra={"endpoint": self._cat_endpoint, "error": str(exc)},
+                    )
+                    self._backend = "argos"
+                else:
+                    raise RuntimeError(
+                        f"CAT-Translate server is unavailable at {self._cat_endpoint}: {exc}"
+                    ) from exc
+
         effective_device = self._requested_device
         if effective_device == "cuda" and not self._detect_cuda():
             logger.warning(
@@ -206,6 +255,8 @@ class TranslatorManager:
             raise
 
     def is_available(self) -> bool:
+        if self._backend == "cat_translate":
+            return self._available and self._cat_backend is not None and self._cat_backend.is_available()
         return self._available and self._ja_en is not None and self._en_ja is not None
 
     def translate_ja_to_en(self, text: str) -> str:
@@ -216,6 +267,8 @@ class TranslatorManager:
             return text
         with self._lock:
             try:
+                if self._backend == "cat_translate":
+                    return self._cat_backend.translate(text, "ja_to_en")
                 # Argos translate API: .translate(text) or argostranslate.translate.translate
                 if hasattr(self._ja_en, "translate"):
                     return self._ja_en.translate(text)  # type: ignore[no-any-return]
@@ -235,6 +288,8 @@ class TranslatorManager:
             return text
         with self._lock:
             try:
+                if self._backend == "cat_translate":
+                    return self._cat_backend.translate(text, "en_to_ja")
                 if hasattr(self._en_ja, "translate"):
                     return self._en_ja.translate(text)  # type: ignore[no-any-return]
                 if self._translate_module and hasattr(self._translate_module, "translate"):
@@ -250,3 +305,6 @@ class TranslatorManager:
         self._ja_en = None
         self._en_ja = None
         self._translate_module = None
+        if self._cat_backend is not None:
+            self._cat_backend.close()
+        self._cat_backend = None

@@ -41,7 +41,17 @@ def is_pure_japanese(text: str) -> bool:
 # We keep a compatible pattern here so masking.py is self-contained.
 
 _CODE_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
+_FRONTMATTER_RE = re.compile(r"\A---[ \t]*\n.*?\n---[ \t]*(?:\r?\n)?", re.DOTALL)
 _INLINE_CODE_RE = re.compile(r"`[^`]+`")
+_HTML_TAG_RE = re.compile(r"</?[A-Za-z][^>]*?>")
+_LATEX_RE = re.compile(r"\$\$.*?\$\$|\\\[.*?\\\]|\\\(.*?\\\)", re.DOTALL)
+_HEADING_MARKER_RE = re.compile(r"(?m)^[ \t]{0,3}#{1,6}[ \t]+")
+_LIST_MARKER_RE = re.compile(r"(?m)^[ \t]+(?:[-*+]|\d+[.)])[ \t]+|^[ \t]*(?:[-*+]|\d+[.)])[ \t]+")
+_BLOCKQUOTE_MARKER_RE = re.compile(r"(?m)^[ \t]*(?:>[ \t]*)+")
+_TABLE_SEPARATOR_RE = re.compile(
+    r"(?m)^[ \t]*\|?[ \t]*:?-{3,}:?[ \t]*(?:\|[ \t]*:?-{3,}:?[ \t]*)+\|?[ \t]*$"
+)
+_TABLE_PIPE_RE = re.compile(r"(?m)(?<=\S)[ \t]*\|[ \t]*(?=\S|$)|^[ \t]*\||\|[ \t]*(?=\n|$)")
 _URL_RE = re.compile(r"https?://\S+|file://\S+")
 # Windows: C:\Users\...  and D:\path\to\file.ts
 _WINDOWS_PATH_RE = re.compile(
@@ -85,7 +95,15 @@ _IDENTIFIER_CALL_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\(\)")
 # regex set. Changes after freeze require review (see tests/test_jp_translation_masking.py).
 _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("code_block", _CODE_BLOCK_RE),
+    ("frontmatter", _FRONTMATTER_RE),
     ("inline_code", _INLINE_CODE_RE),
+    ("latex", _LATEX_RE),
+    ("html_tag", _HTML_TAG_RE),
+    ("heading_marker", _HEADING_MARKER_RE),
+    ("list_marker", _LIST_MARKER_RE),
+    ("blockquote_marker", _BLOCKQUOTE_MARKER_RE),
+    ("table_separator", _TABLE_SEPARATOR_RE),
+    ("table_pipe", _TABLE_PIPE_RE),
     ("url", _URL_RE),
     ("windows_path", _WINDOWS_PATH_RE),
     ("posix_path", _POSIX_PATH_RE),
