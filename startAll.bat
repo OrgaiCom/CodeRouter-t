@@ -2,12 +2,8 @@ rem @echo off
 cd /d "%~dp0"
 
 if not exist "%USERPROFILE%\.coderouter-t" mkdir "%USERPROFILE%\.coderouter-t"
-rem Do not overwrite existing user settings: copy providers.yaml only on first run
-if not exist "%USERPROFILE%\.coderouter-t\providers.yaml" (
-    copy /Y "%~dp0providers.yaml" "%USERPROFILE%\.coderouter-t\."
-) else (
-    echo [INFO] Keeping existing %USERPROFILE%\.coderouter-t\providers.yaml.
-)
+
+copy /Y "%~dp0providers.yaml" "%USERPROFILE%\.coderouter-t\."
 
 :: 1. new cmd and llamaServe.bat (only when CAT-Translate is installed)
 if exist "%~dp0models\cat-translate\CAT-Translate-1.4b.Q4_K_M.gguf" (

@@ -95,6 +95,11 @@ class AnthropicMessage(BaseModel):
 
     role: Literal["user", "assistant"]
     content: str | list[dict[str, Any]]
+    # A mid-conversation ``role: system`` must be sent upstream as a user
+    # turn because Anthropic's wire format does not allow that role there.
+    # Preserve its origin internally so transformations such as JA→EN can
+    # still treat it as system-owned content. It is never serialized.
+    source_role: Literal["system"] | None = Field(default=None, exclude=True)
 
 
 class AnthropicTool(BaseModel):
@@ -198,7 +203,9 @@ def normalize_message_roles(payload: dict[str, Any]) -> dict[str, Any]:
                     # turn ahead of the entire conversation, which invalidates
                     # the prefix cache of local backends (llama.cpp / LM Studio)
                     # and forces a full prompt reprocess on every request.
-                    messages_out.append({"role": "user", "content": text})
+                    messages_out.append(
+                        {"role": "user", "content": text, "source_role": "system"}
+                    )
             continue
         # Unknown role (ctx / msg / future surprises): keep its position
         # in the conversation as a user turn; drop if nothing salvageable.

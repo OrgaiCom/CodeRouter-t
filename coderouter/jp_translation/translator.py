@@ -35,6 +35,17 @@ _CODE_FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
 _SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[。．.!?！？])\s+|\n{2,}")
 
 
+def _is_claude_code_system_reminder(text: str) -> bool:
+    """Return whether ``text`` is a complete synthetic Claude Code reminder.
+
+    Claude Code can place system-owned context in a ``role: user`` turn to
+    preserve its position in the conversation. It wraps that content in a
+    ``<system-reminder>`` element, which must retain its original language.
+    """
+    stripped = text.strip().casefold()
+    return stripped.startswith("<system-reminder>") and stripped.endswith("</system-reminder>")
+
+
 def _find_code_spans(text: str) -> list[tuple[int, int]]:
     """Return list of (start,end) for ``` fences to avoid splitting inside."""
     return [m.span() for m in _CODE_FENCE_RE.finditer(text)]
@@ -288,6 +299,16 @@ def translate_anthropic_request_ja_to_en(
     for msg in req.messages:
         role = msg.role
         content = msg.content
+        # Claude Code can emit per-turn system-reminders (including content
+        # loaded from user-scope CLAUDE.md) in the messages array. The
+        # ingress normalizes their wire role to ``user`` for compatibility,
+        # while retaining this marker. Do not translate those instructions.
+        if msg.source_role == "system":
+            new_messages.append(msg)
+            continue
+        if isinstance(content, str) and _is_claude_code_system_reminder(content):
+            new_messages.append(msg)
+            continue
         if isinstance(content, str):
             # Short-form string content: only translate if user role and Japanese
             if role == "user" and is_japanese(content):
@@ -335,7 +356,9 @@ def translate_anthropic_request_ja_to_en(
                 btext = str(getattr(block, "text", "") or "")
             if btype == "text":
                 # is_japanese optimization (design 3.3.1)
-                if role == "user" and btext and is_japanese(btext):
+                if _is_claude_code_system_reminder(btext):
+                    new_blocks.append(block)  # type: ignore[arg-type]
+                elif role == "user" and btext and is_japanese(btext):
                     _t0 = _time.perf_counter()
                     new_text = _translate_chunked(btext, "ja_to_en", manager, chunk_size_chars)
                     _elapsed = _time.perf_counter() - _t0

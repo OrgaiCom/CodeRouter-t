@@ -265,6 +265,56 @@ def test_request_translation_skips_non_japanese_user():
     assert result.messages[0].content[0]["text"] == "Hello world"  # type: ignore
 
 
+def test_request_translation_skips_normalized_mid_conversation_system_message():
+    """Claude Code の system-reminder は user に正規化されても翻訳しない。"""
+    manager = Mock()
+    manager.is_available.return_value = True
+    manager.translate_ja_to_en.side_effect = lambda text: f"EN:{text}"
+
+    req = AnthropicRequest.model_validate(
+        {
+            "model": "test",
+            "max_tokens": 1024,
+            "messages": [
+                {"role": "user", "content": "実際の質問です"},
+                {
+                    "role": "system",
+                    "content": "ユーザースコープの CLAUDE.md にある常設指示です",
+                },
+            ],
+        }
+    )
+
+    result = translate_anthropic_request_ja_to_en(req, manager)
+
+    assert result.messages[0].content == "EN:実際の質問です"
+    assert result.messages[1].content == "ユーザースコープの CLAUDE.md にある常設指示です"
+    assert manager.translate_ja_to_en.call_count == 1
+
+
+def test_request_translation_skips_claude_code_system_reminder_wrapped_as_user():
+    """Claude Code が user ロールで運ぶ合成 system-reminder は翻訳しない。"""
+    manager = Mock()
+    manager.is_available.return_value = True
+    manager.translate_ja_to_en.side_effect = lambda text: f"EN:{text}"
+    reminder = "<system-reminder>\nユーザースコープの CLAUDE.md にある常設指示です\n</system-reminder>"
+
+    req = AnthropicRequest(
+        model="test",
+        max_tokens=1024,
+        messages=[
+            AnthropicMessage(role="user", content="実際の質問です"),
+            AnthropicMessage(role="user", content=reminder),
+        ],
+    )
+
+    result = translate_anthropic_request_ja_to_en(req, manager)
+
+    assert result.messages[0].content == "EN:実際の質問です"
+    assert result.messages[1].content == reminder
+    assert manager.translate_ja_to_en.call_count == 1
+
+
 def test_request_translation_skips_tool_use():
     manager = Mock()
     manager.is_available.return_value = True

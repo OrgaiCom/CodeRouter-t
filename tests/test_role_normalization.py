@@ -45,6 +45,8 @@ def test_claude_code_system_role_in_messages_is_accepted():
     # cacheable prefix ahead of it is unchanged.
     assert [m.role for m in req.messages] == ["user", "user", "assistant"]
     assert req.messages[1].content == "injected system reminder"
+    assert req.messages[1].source_role == "system"
+    assert "source_role" not in req.messages[1].model_dump()
     assert req.system is None
 
 
