@@ -1,4 +1,4 @@
-<h1 align="center">CodeRouter-t alpha</h1>
+<h1 align="center">CodeRouter-t alpha ver.</h1>
 
 <p align="center">
   <strong>ローカル LLM で Claude Code を動かすと壊れる問題、<br>ルーター 1 つで直します。</strong>
