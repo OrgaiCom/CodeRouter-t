@@ -2,11 +2,11 @@ rem @echo off
 cd /d "%~dp0"
 
 if not exist "%USERPROFILE%\.coderouter-t" mkdir "%USERPROFILE%\.coderouter-t"
-rem 既存の利用者設定を上書きしない: providers.yaml が無い初回のみコピーする
+rem Do not overwrite existing user settings: copy providers.yaml only on first run
 if not exist "%USERPROFILE%\.coderouter-t\providers.yaml" (
     copy /Y "%~dp0providers.yaml" "%USERPROFILE%\.coderouter-t\."
 ) else (
-    echo [INFO] 既存の %USERPROFILE%\.coderouter-t\providers.yaml を保持します。
+    echo [INFO] Keeping existing %USERPROFILE%\.coderouter-t\providers.yaml.
 )
 
 :: 1. new cmd and llamaServe.bat (only when CAT-Translate is installed)
@@ -14,7 +14,7 @@ if exist "%~dp0models\cat-translate\CAT-Translate-1.4b.Q4_K_M.gguf" (
     start "CAT-Translate llama-server" cmd /k "%~dp0llamaServe.bat"
     call :wait_for_llama
 ) else (
-    echo [INFO] CAT-Translate GGUF がないため llama-server は起動しません。
+    echo [INFO] CAT-Translate GGUF not found. Skipping llama-server.
 )
 
 :: 2. new cmd and codeRouterServe.bat
@@ -36,12 +36,12 @@ if not defined LLAMA_PORT set "LLAMA_PORT=8080"
 :wait_for_llama_loop
 curl.exe -fsS "http://127.0.0.1:%LLAMA_PORT%/health" >nul 2>&1
 if not errorlevel 1 (
-    echo [INFO] llama-server の起動を確認しました。
+    echo [INFO] llama-server is up.
     exit /b 0
 )
 set /a LLAMA_WAIT_COUNT+=1
 if %LLAMA_WAIT_COUNT% GEQ 60 (
-    echo [WARN] llama-server の起動確認がタイムアウトしました。CodeRouterは起動します。
+    echo [WARN] Timed out waiting for llama-server. Starting CodeRouter anyway.
     exit /b 0
 )
 timeout /t 1 /nobreak >nul

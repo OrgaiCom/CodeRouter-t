@@ -11,18 +11,18 @@ if not defined LLAMA_N_PARALLEL set "LLAMA_N_PARALLEL=1"
 if not defined LLAMA_N_GPU_LAYERS set "LLAMA_N_GPU_LAYERS=99"
 
 if not exist "%CAT_MODEL%" (
-    echo [ERROR] CAT-Translate GGUF が見つかりません。
+    echo [ERROR] CAT-Translate GGUF not found.
     echo         %CAT_MODEL%
     echo.
-    echo installCodeRouter.bat の翻訳バックエンド選択で CAT-Translate を選択してください。
+    echo Please select CAT-Translate in the translation backend prompt of installCodeRouter.bat.
     pause
     exit /b 1
 )
 
 where llama-server.exe >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] llama-server.exe が見つかりません。
-    echo         llama.cpp をインストールして PATH を更新してください。
+    echo [ERROR] llama-server.exe not found.
+    echo         Please install llama.cpp and update PATH.
     echo         https://github.com/ggml-org/llama.cpp/releases
     pause
     exit /b 1
@@ -35,7 +35,7 @@ echo  Model : %CAT_MODEL%
 echo  URL   : http://127.0.0.1:%LLAMA_PORT%/v1
 echo  GPU layers: %LLAMA_N_GPU_LAYERS%
 echo.
-echo VRAM競合を避ける場合は、起動前に次を設定してください:
+echo To avoid VRAM conflicts, set the following before launch:
 echo   set LLAMA_N_GPU_LAYERS=0
 echo.
 
