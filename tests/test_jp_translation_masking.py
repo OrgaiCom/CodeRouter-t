@@ -9,7 +9,9 @@ from unittest.mock import Mock
 
 from coderouter.jp_translation.masking import (
     has_placeholder_mutation,
+    is_already_japanese,
     is_japanese,
+    is_pure_japanese,
     mask_text,
     unmask_text,
 )
@@ -407,3 +409,88 @@ def test_translate_fallback_on_unmask_leak():
     result = _translate_with_protection(text, "en_to_ja", manager)
     # Should fallback to original text instead of leaking __CR_PROTECTED_
     assert result == text
+
+
+def test_is_already_japanese_pure_japanese():
+    assert is_already_japanese("こんにちは、世界！") is True
+    assert is_already_japanese("了解しました。") is True
+    assert is_already_japanese("設定完了") is True
+
+
+def test_is_already_japanese_with_english_terms():
+    # User's bug case: Japanese message containing project name "CodeRouter"
+    user_case = (
+        "こんにちは。またお呼びいただきありがとうございます。\n\n"
+        "CodeRouterプロジェクトについて、何か取り組むべきタスクやご質問はございますか？"
+        "例えば、特定のモジュールの実装支援、コードレビュー、設定に関する相談など、どのような内容でも承ります。"
+    )
+    assert is_already_japanese(user_case) is True
+
+    # Technical Japanese text with heavy English acronyms and tools
+    tech_text = "GitHub Actions の CI/CD パイプラインで Docker build と pytest を実行するように設定しました。"
+    assert is_already_japanese(tech_text) is True
+
+    # Common short confirmation
+    assert is_already_japanese("OK、了解です！") is True
+    assert is_already_japanese("Python の requests ライブラリを使用します。") is True
+
+
+def test_is_already_japanese_with_code_blocks_and_inlines():
+    # Code block inside Japanese text
+    text_with_code = (
+        "以下のコードを実行してください：\n"
+        "```python\n"
+        "def run_pipeline(config: dict) -> bool:\n"
+        "    return True\n"
+        "```\n"
+        "これで完了です。"
+    )
+    assert is_already_japanese(text_with_code) is True
+
+    # Inline code inside Japanese text
+    text_with_inline = "`getUserProfile(userId)` API を呼び出してユーザー情報を取得してください。"
+    assert is_already_japanese(text_with_inline) is True
+
+
+def test_is_already_japanese_english_and_quotes():
+    # Pure English
+    assert is_already_japanese("Hello, world!") is False
+    assert is_already_japanese("I will fix the bug in src/main.ts.") is False
+    assert is_already_japanese("") is False
+    assert is_already_japanese("   ") is False
+
+    # English text quoting Japanese words
+    assert is_already_japanese('The word "こんにちは" means hello.') is False
+    assert is_already_japanese("Please review the document regarding 設計 and 仕様.") is False
+
+
+def test_is_pure_japanese_backwards_compat():
+    user_case = "CodeRouterプロジェクトについて、何か取り組むべきタスクはありますか？"
+    assert is_pure_japanese(user_case) is True
+    assert is_pure_japanese("Hello, world!") is False
+
+
+def test_translate_response_skips_when_already_japanese():
+    """translate_anthropic_response_en_to_ja must skip translation when model returns Japanese."""
+    user_case = (
+        "こんにちは。またお呼びいただきありがとうございます。\n\n"
+        "CodeRouterプロジェクトについて、何か取り組むべきタスクやご質問はございますか？"
+    )
+    manager = Mock()
+    manager.is_available.return_value = True
+    manager.translate_en_to_ja.return_value = "Hello. Thank you for calling again..."  # should NOT be called
+
+    resp = AnthropicResponse(
+        id="resp-test",
+        model="test-model",
+        content=[{"type": "text", "text": user_case}],
+        stop_reason="end_turn",
+        usage=AnthropicUsage(input_tokens=10, output_tokens=20),
+    )
+
+    result = translate_anthropic_response_en_to_ja(resp, manager, verbose=True)
+    # Manager should never have been invoked because text is already Japanese
+    assert manager.translate_en_to_ja.call_count == 0
+    # Original text must be preserved intact without reverse-translation
+    assert result.content[0]["text"] == user_case
+

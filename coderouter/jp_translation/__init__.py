@@ -10,7 +10,13 @@ Design: doc/翻訳層設計書.md
 This package is separate from coderouter.translation (Anthropic⇔OpenAI wire).
 """
 from .manager import TranslatorManager
-from .masking import is_japanese, is_pure_japanese, mask_text, unmask_text
+from .masking import (
+    is_already_japanese,
+    is_japanese,
+    is_pure_japanese,
+    mask_text,
+    unmask_text,
+)
 from .translator import (
     translate_anthropic_request_ja_to_en,
     translate_anthropic_response_en_to_ja,
@@ -18,6 +24,7 @@ from .translator import (
 
 __all__ = [
     "TranslatorManager",
+    "is_already_japanese",
     "is_japanese",
     "is_pure_japanese",
     "mask_text",

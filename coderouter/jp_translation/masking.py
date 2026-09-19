@@ -15,6 +15,8 @@ import re
 
 # Explicit Unicode ranges: Hiragana \u3040-\u309F, Katakana \u30A0-\u30FF, Kanji \u4E00-\u9FFF
 _JA_RE = re.compile(r"[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]")
+_HIRAGANA_RE = re.compile(r"[\u3040-\u309F]")
+_LATIN_RE = re.compile(r"[A-Za-z]")
 
 
 def is_japanese(text: str) -> bool:
@@ -22,14 +24,47 @@ def is_japanese(text: str) -> bool:
     return bool(_JA_RE.search(text))
 
 
-def is_pure_japanese(text: str) -> bool:
-    """Return True if text contains Japanese and no ASCII letters.
+def is_already_japanese(text: str) -> bool:
+    """Return True if text is already Japanese and should skip EN→JA translation.
 
-    Used for EN→JA guard (案B): skip translation only when the block is
-    pure Japanese. Mixed EN+JA (e.g. "Hello こんにちは") returns False
-    so it will still be translated.
+    A block is considered already Japanese when Japanese characters make up at
+    least 25% of the combined Japanese + Latin character count (after stripping
+    code blocks and inline code).  This threshold allows Japanese text with
+    mixed English technical terms (e.g. "CodeRouterについて") to be correctly
+    recognised as Japanese, while purely English text that merely quotes a few
+    Japanese words (e.g. 'The word "こんにちは" means hello.') is still sent for
+    translation.
     """
-    return bool(_JA_RE.search(text)) and not bool(re.search(r"[A-Za-z]", text))
+    if not text or not text.strip():
+        return False
+
+    # Strip code blocks and inline code to evaluate natural language text only.
+    clean = _CODE_BLOCK_RE.sub("", text)
+    clean = _INLINE_CODE_RE.sub("", clean)
+    if not clean.strip():
+        # If stripping removed everything, fall back to original text.
+        clean = text
+
+    ja_chars = len(_JA_RE.findall(clean))
+    if ja_chars == 0:
+        return False
+
+    en_chars = len(_LATIN_RE.findall(clean))
+    if en_chars == 0:
+        # No English letters — pure Japanese.
+        return True
+
+    # Japanese ratio >= 25%: considered already Japanese.
+    total = ja_chars + en_chars
+    return (ja_chars / total) >= 0.25
+
+
+def is_pure_japanese(text: str) -> bool:
+    """Return True if text is already Japanese.
+
+    Backwards-compatible alias for is_already_japanese.
+    """
+    return is_already_japanese(text)
 
 
 # ---------------------------------------------------------------------------

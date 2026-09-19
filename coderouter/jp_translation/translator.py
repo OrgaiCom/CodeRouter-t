@@ -19,6 +19,7 @@ from .cat_translate import strip_stop_tokens
 from .manager import TranslatorManager
 from .masking import (
     has_placeholder_mutation,
+    is_already_japanese,
     is_japanese,
     is_pure_japanese,
     mask_text,
@@ -478,8 +479,8 @@ def translate_anthropic_response_en_to_ja(
     """Translate assistant text blocks EN→JA after Repair.
 
     Skips tool_use, image. Assumes Repair already structured tool_use.
-    Skips blocks that are pure Japanese (is_pure_japanese guard, 案B) to
-    avoid double-translation; mixed EN+JA is translated to maximize JA output.
+    Skips blocks that are already Japanese (is_already_japanese guard) to
+    avoid reverse/double-translation; English-dominant text is translated.
     Synchronous; caller must to_thread if needed.
 
     When ``verbose`` is True (default in v2.17), emits one simple
@@ -518,8 +519,8 @@ def translate_anthropic_response_en_to_ja(
             # 収集: ログでモデル原文を表示するため（案B + empty対応）
             _raw_texts.append(btext)
             if btext and btext.strip():
-                # 案B: 純日本語のみスキップ、混在EN+JAは翻訳する
-                if is_pure_japanese(btext):
+                # モデルが既に日本語（英単語混在含む）を返した場合はスキップして英語への逆翻訳を防止
+                if is_already_japanese(btext):
                     _had_japanese_skip = True
                     logger.info(
                         "translation-skipped",
