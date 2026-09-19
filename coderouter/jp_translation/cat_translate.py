@@ -12,6 +12,40 @@ _DIRECTIONS = {
     "en_to_ja": ("English", "Japanese"),
 }
 
+_STOP_TOKENS: tuple[str, ...] = (
+    "</s>",
+    "<|im_end|>",
+    "<|endoftext|>",
+    "<|eot_id|>",
+)
+
+
+def strip_stop_tokens(text: str) -> str:
+    """Strip trailing EOS tokens (and leading BOS tokens) from translated text.
+
+    LLM-based translation models and SentencePiece tokenizers frequently leak
+    trailing special tokens such as ``</s>`` or ``<|im_end|>``.
+    """
+    if not text:
+        return text
+
+    changed = True
+    result = text
+    while changed:
+        changed = False
+        stripped = result.rstrip()
+        for tok in _STOP_TOKENS:
+            if stripped.endswith(tok):
+                result = stripped[: -len(tok)].rstrip()
+                changed = True
+                break
+
+    result_l = result.lstrip()
+    if result_l.startswith("<s>"):
+        result = result_l[len("<s>") :].lstrip()
+
+    return result
+
 
 def _strip_fences(content: str) -> str:
     """Remove a wrapping ``` fence if the model echoed one around the translation."""
@@ -23,6 +57,14 @@ def _strip_fences(content: str) -> str:
         if body:
             return body
     return stripped
+
+
+def _clean_translated_text(content: str) -> str:
+    """Clean model output: strip wrapping fences and leaked stop tokens (e.g. </s>)."""
+    cleaned = strip_stop_tokens(content.strip())
+    cleaned = _strip_fences(cleaned)
+    cleaned = strip_stop_tokens(cleaned.strip())
+    return cleaned
 
 
 class CatTranslateBackend:
@@ -76,6 +118,7 @@ class CatTranslateBackend:
                 "top_p": 1.0,
                 "max_tokens": max_tokens,
                 "stream": False,
+                "stop": list(_STOP_TOKENS),
             },
         )
         response.raise_for_status()
@@ -86,7 +129,7 @@ class CatTranslateBackend:
             raise RuntimeError("CAT-Translate returned an invalid response") from exc
         if not isinstance(content, str) or not content.strip():
             raise RuntimeError("CAT-Translate returned empty translation")
-        return _strip_fences(content.strip())
+        return _clean_translated_text(content.strip())
 
     def close(self) -> None:
         self._available = False

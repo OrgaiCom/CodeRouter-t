@@ -15,6 +15,7 @@ from typing import Any
 from coderouter.logging import get_logger, log_translation_pair
 from coderouter.translation.anthropic import AnthropicRequest, AnthropicResponse
 
+from .cat_translate import strip_stop_tokens
 from .manager import TranslatorManager
 from .masking import (
     has_placeholder_mutation,
@@ -211,7 +212,7 @@ def _translate_with_protection(
         logger.warning("translation-fallback", extra=extra_leak)
         return text
 
-    return unmasked
+    return strip_stop_tokens(unmasked)
 
 
 def _translate_chunked(
@@ -275,7 +276,7 @@ def _translate_chunked(
             },
         )
 
-    return "".join(translated_parts)
+    return strip_stop_tokens("".join(translated_parts))
 
 
 def translate_anthropic_request_ja_to_en(
