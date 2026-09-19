@@ -23,7 +23,7 @@ start "Ollama Server" cmd /k "%~dp0ollamaServe.bat"
 start "Ollama Ps" cmd /k "%~dp0ollamaPs.bat"
 
 :: 5. VS Code
-call code .
+start code ..
 exit /b 0
 
 :wait_for_llama
