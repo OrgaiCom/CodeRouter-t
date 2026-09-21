@@ -219,6 +219,7 @@ async def messages(
                     # Sync API → to_thread + chunk-aware timeout (v2.18, capped at 300s)
                     verbose = bool(getattr(tcfg, "verbose", False))
                     chunk_size = int(getattr(tcfg, "chunk_size_chars", 4096))
+                    log_history = bool(getattr(tcfg, "log_history", False))
                     timeout_s = 60.0  # default init so except can always reference
                     # Estimate total chars for timeout (system excluded, only user text considered)
                     try:
@@ -241,7 +242,7 @@ async def messages(
                     timeout_s = min(timeout_s, 300.0)
                     anth_req = await asyncio.wait_for(
                         asyncio.to_thread(
-                            translate_anthropic_request_ja_to_en, anth_req, manager, verbose, chunk_size
+                            translate_anthropic_request_ja_to_en, anth_req, manager, verbose, chunk_size, log_history
                         ),
                         timeout=timeout_s,
                     )

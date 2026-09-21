@@ -285,6 +285,7 @@ def translate_anthropic_request_ja_to_en(
     manager: TranslatorManager,
     verbose: bool = False,
     chunk_size_chars: int = _DEFAULT_CHUNK_SIZE_CHARS,
+    log_history: bool = False,
 ) -> AnthropicRequest:
     """Translate user text blocks JA→EN. System/tool_use/tool_result are skipped.
 
@@ -430,16 +431,26 @@ def translate_anthropic_request_ja_to_en(
     if verbose:
         try:
             if _orig_batch:
+                # Filter for logs: if log_history is False, only keep the last turn
+                if not log_history and len(_orig_batch) > 1:
+                    log_orig = [_orig_batch[-1]]
+                    log_trans = [_trans_batch[-1]]
+                    log_blocks = 1
+                else:
+                    log_orig = _orig_batch
+                    log_trans = _trans_batch
+                    log_blocks = len(_orig_batch)
+
                 # Join multiple blocks with newline (human readable)
-                _orig_text = "\n".join(_orig_batch)
-                _trans_text = "\n".join(_trans_batch)
+                _orig_text = "\n".join(log_orig)
+                _trans_text = "\n".join(log_trans)
                 log_translation_pair(
                     logger,
                     direction="ja_to_en",
                     original=_orig_text,
                     translated=_trans_text,
                     elapsed_s=_total_elapsed,
-                    blocks=len(_orig_batch),
+                    blocks=log_blocks,
                 )
             else:
                 # No Japanese detected in request — log skipped translation for observability
