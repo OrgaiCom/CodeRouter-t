@@ -16,7 +16,7 @@ from coderouter.jp_translation.directive import (
 from coderouter.translation.anthropic import AnthropicMessage, AnthropicRequest
 
 D = DEFAULT_DIRECTIVE
-MARKER = "Always respond in English"
+MARKER = DEFAULT_DIRECTIVE  # marker == full injected text (no short-phrase false positives)
 
 
 def _anth_req(messages, system=None):
@@ -32,8 +32,16 @@ def test_config_defaults_on_last_user():
     cfg = TranslationConfig()
     assert cfg.enforce_english_response is True
     assert cfg.enforce_english_position == "last_user"
-    assert MARKER in cfg.enforce_english_directive
+    assert cfg.enforce_english_directive == DEFAULT_DIRECTIVE
     assert cfg.enforce_english_directive.startswith("**")
+
+
+def test_short_phrase_in_code_does_not_suppress():
+    # User code merely containing the words must not count as injected.
+    req = _anth_req([("user", 'x = "Always respond in English"  # comment')])
+    out = ensure_english_directive_anthropic(req, D, "last_user")
+    assert out.messages[-1].content.count(D) == 1
+    assert out.messages[-1].content.endswith(D)
 
 
 def test_anthropic_last_user_str():

@@ -21,18 +21,19 @@ DEFAULT_DIRECTIVE = (
     "by CodeRouter's translation layer.**"
 )
 
-# Idempotency marker: substring match so re-entry never double-injects.
-_MARKER = "Always respond in English"
-
+# Idempotency marker: the full directive text itself. A short-phrase marker
+# could false-positive on user code containing the same words; the full
+# string (with ** emphasis and the CodeRouter-specific clause) practically
+# never appears outside our own injection.
 Position = Literal["system", "last_user", "both"]
 
 
-def _needs_inject(text: str) -> bool:
-    return _MARKER not in text
+def _needs_inject(text: str, directive: str) -> bool:
+    return bool(directive) and directive not in text
 
 
 def _append_text(text: str, directive: str) -> str:
-    if not _needs_inject(text):
+    if not _needs_inject(text, directive):
         return text
     if not text.strip():
         return directive
@@ -116,10 +117,6 @@ def ensure_english_directive_anthropic(
     position: Position = "last_user",
 ) -> Any:
     """Return a copy of AnthropicRequest with the directive injected."""
-    if not directive or not _needs_inject(directive):
-        # Empty directive: nothing to do. Directive already containing the
-        # marker is used as-is (callers pass the full configured text).
-        pass
     if not directive:
         return req
 
@@ -145,11 +142,11 @@ def ensure_english_directive_anthropic(
             if not _anthropic_message_has_text(content):
                 continue
             new_content = _inject_into_anthropic_content(content, directive)
-            if new_content is None or new_content == content:
-                # Already injected (idempotent) or non-text turn.
-                if new_content == content:
-                    injected = True
-                continue
+            if new_content is None:
+                continue  # non-text turn: keep searching backwards
+            if new_content == content:
+                injected = True  # already injected here: stop, don't duplicate
+                break
             try:
                 messages[idx] = msg.model_copy(update={"content": new_content})
             except Exception:
