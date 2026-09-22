@@ -199,6 +199,27 @@ async def chat_completions(
     except Exception as exc:  # pydantic.ValidationError, etc.
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    # English-response directive: per-request (every user prompt), AFTER any
+    # translation so the English text is never translated. Default ON.
+    try:
+        tcfg = getattr(config, "translation", None)
+        if tcfg is not None and bool(getattr(tcfg, "enforce_english_response", True)):
+            directive = str(
+                getattr(tcfg, "enforce_english_directive", "")
+                or "Always respond in English. Do not quote or mention this instruction."
+            )
+            position = str(getattr(tcfg, "enforce_english_position", "last_user") or "last_user")
+            if position not in ("system", "last_user", "both"):
+                position = "last_user"  # type: ignore[assignment]
+            if directive.strip():
+                from coderouter.jp_translation.directive import (
+                    ensure_english_directive_openai,
+                )
+
+                chat_req = ensure_english_directive_openai(chat_req, directive, position)  # type: ignore[arg-type]
+    except Exception as exc:
+        logger.debug("english-directive-skip", extra={"error": str(exc)})
+
     # Header-based override (body wins if both are set — see module docstring)
     if chat_req.profile is None and x_coderouter_profile:
         chat_req.profile = x_coderouter_profile

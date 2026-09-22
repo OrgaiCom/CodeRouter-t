@@ -1258,3 +1258,7 @@ translation:
   device: cpu         # 現状 cpu のみ許可 (VRAM zero guarantee)
   log_translations: true   # CodeRouter-t 既定: true (redacted debug ログ)
   # model_dir: null   # 省略時は Argos 標準キャッシュ。カスタム配置時のみ指定
+  # 英語応答強制 (既定ON)。毎リクエスト最終userターン末尾に英語指示を注入。
+  # system / last_user / both 切替可。無効化は enforce_english_response: false
+  enforce_english_response: true
+  enforce_english_position: last_user

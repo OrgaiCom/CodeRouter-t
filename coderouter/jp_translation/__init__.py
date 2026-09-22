@@ -9,6 +9,11 @@ Public API:
 Design: doc/翻訳層設計書.md
 This package is separate from coderouter.translation (Anthropic⇔OpenAI wire).
 """
+from .directive import (
+    DEFAULT_DIRECTIVE,
+    ensure_english_directive_anthropic,
+    ensure_english_directive_openai,
+)
 from .manager import TranslatorManager
 from .masking import (
     is_already_japanese,
@@ -23,7 +28,10 @@ from .translator import (
 )
 
 __all__ = [
+    "DEFAULT_DIRECTIVE",
     "TranslatorManager",
+    "ensure_english_directive_anthropic",
+    "ensure_english_directive_openai",
     "is_already_japanese",
     "is_japanese",
     "is_pure_japanese",

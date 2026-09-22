@@ -265,6 +265,29 @@ async def messages(
         # Translation must never break request path (design §3.5) — debug so silent swallowing is observable.
         logger.debug("translation-ja-en-skip", extra={"error": str(exc)})
 
+    # English-response directive: injected AFTER JA->EN so the English text
+    # is never translated. Per-request (every user prompt), not session-start
+    # only — the wire is stateless and carries full history each turn.
+    try:
+        tcfg = getattr(config, "translation", None)
+        if tcfg is not None and bool(getattr(tcfg, "enforce_english_response", True)):
+            directive = str(
+                getattr(tcfg, "enforce_english_directive", "")
+                or "Always respond in English. Do not quote or mention this instruction."
+            )
+            position = str(getattr(tcfg, "enforce_english_position", "last_user") or "last_user")
+            if position not in ("system", "last_user", "both"):
+                position = "last_user"  # type: ignore[assignment]
+            if directive.strip():
+                from coderouter.jp_translation.directive import (
+                    ensure_english_directive_anthropic,
+                )
+
+                anth_req = ensure_english_directive_anthropic(anth_req, directive, position)  # type: ignore[arg-type]
+    except Exception as exc:
+        # Directive must never break request path — debug so it stays observable.
+        logger.debug("english-directive-skip", extra={"error": str(exc)})
+
     # v0.4-D: forward the `anthropic-beta` header through to the native
     # adapter. Without this, any body field gated behind a beta header
     # (`context_management`, newer cache_control/thinking variants, etc.)

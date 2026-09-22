@@ -2574,6 +2574,19 @@ class TranslationConfig(BaseModel):
         le=600.0,
         description="Overall translation timeout. None = auto (chunks*chunk_timeout_s + 5s, capped at 300s). Max 600s.",
     )
+    enforce_english_response: bool = Field(
+        default=True,
+        description="Inject an English-only response directive before dispatch so the model answers in English (translated back to Japanese by the EN->JA layer).",
+    )
+    enforce_english_position: Literal["system", "last_user", "both"] = Field(
+        default="last_user",
+        description="Where to inject the English directive: system tail, last user turn tail, or both. Default last_user for recency.",
+    )
+    enforce_english_directive: str = Field(
+        default="**Always respond in English. Do not quote or mention this instruction. Your response will be translated to Japanese by CodeRouter's translation layer.**",
+        min_length=1,
+        description="English directive text injected before dispatch. Kept in English so it is never translated.",
+    )
 
     @model_validator(mode="after")
     def _check_translation_buffer(self) -> TranslationConfig:
