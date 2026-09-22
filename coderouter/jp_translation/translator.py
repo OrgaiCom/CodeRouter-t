@@ -128,13 +128,62 @@ def _chunk_text(text: str, chunk_size_chars: int = _DEFAULT_CHUNK_SIZE_CHARS) ->
     return chunks
 
 
+_WRONG_LANG_MIN_CHARS = 100
+
+_PLACEHOLDER_STRIP_RE = re.compile(r"__CR_PROTECTED_\d+__")
+
+
+def _is_wrong_language_output(unmasked: str, masked: str, direction: str) -> bool:
+    """Return True when an EN→JA result stayed English (CAT paraphrase).
+
+    Guarded to avoid false positives on code-only chunks: placeholders
+    are stripped from the masked input and the remaining natural text
+    must itself reach ``_WRONG_LANG_MIN_CHARS``.
+    """
+    if direction != "en_to_ja":
+        return False
+    if len(unmasked.strip()) < _WRONG_LANG_MIN_CHARS:
+        return False
+    natural = _PLACEHOLDER_STRIP_RE.sub("", masked)
+    if len(natural.strip()) < _WRONG_LANG_MIN_CHARS:
+        return False
+    return not is_japanese(unmasked)
+
+
+def _call_manager(direction: str, masked: str, manager: TranslatorManager, strong: bool) -> str:
+    """Call manager, passing ``strong`` only on retry attempts.
+
+    First attempts (``strong=False``) use the legacy signature so old
+    fakes/mocks observe exactly one call. Retries tolerate legacy
+    managers without the flag via a TypeError fallback.
+    """
+    if not strong:
+        if direction == "ja_to_en":
+            return manager.translate_ja_to_en(masked)
+        return manager.translate_en_to_ja(masked)
+    try:
+        if direction == "ja_to_en":
+            return manager.translate_ja_to_en(masked, strong=True)
+        return manager.translate_en_to_ja(masked, strong=True)
+    except TypeError:
+        if direction == "ja_to_en":
+            return manager.translate_ja_to_en(masked)
+        return manager.translate_en_to_ja(masked)
+
+
 def _translate_with_protection(
     text: str,
     direction: str,
     manager: TranslatorManager,
     chunk_index: int | None = None,
 ) -> str:
-    """Mask → translate → unmask with fallback on mutation."""
+    """Mask → translate → unmask with fallback on mutation.
+
+    CAT ``en_to_ja`` wrong-language output (EN→EN paraphrase) is retried
+    with the emphasized prompt up to ``cat_retry_wrong_language`` times
+    (default 2, timeout unchanged). Exhausted retries fall back to the
+    original text.
+    """
     if not text or not text.strip():
         return text
 
@@ -143,77 +192,138 @@ def _translate_with_protection(
     # Backend name for log observability (Argos/CAT). Kept as extra field;
     # reason strings stay stable so existing log parsers keep working.
     backend = getattr(manager, "_backend", "argos")
-
-    # If masked text has no Japanese (JA→EN) we already checked outside,
-    # but keep for EN→JA always translate.
+    if backend == "cat_translate" and direction == "en_to_ja":
+        max_retries = getattr(manager, "_cat_retry_wrong_language", 2)
+    else:
+        max_retries = 0
     try:
-        if direction == "ja_to_en":
-            translated_masked = manager.translate_ja_to_en(masked)
-        else:
-            translated_masked = manager.translate_en_to_ja(masked)
-    except Exception as exc:
-        extra = {"direction": direction, "reason": "argos-error", "backend": backend, "error": str(exc)}
-        if chunk_index is not None:
-            extra["chunk_index"] = chunk_index
-        logger.warning("translation-failed", extra=extra)
-        return text
+        max_retries = max(0, min(2, int(max_retries)))
+    except (TypeError, ValueError):
+        max_retries = 0
 
-    # Guard: if placeholder was mutated (SentencePiece split etc.), fallback to original
-    if mapping and has_placeholder_mutation(translated_masked, mapping):
-        extra = {"direction": direction, "reason": "placeholder-mutated", "backend": backend, "expected": len(mapping)}
-        if chunk_index is not None:
-            extra["chunk_index"] = chunk_index
-        logger.warning(
-            "translation-placeholder-mutated",
-            extra=extra,
-        )
-        # Try to still unmask what survived, but if critical, return original text?
-        # We attempt unmask; if result still contains placeholder prefix fragments, return original masked translation unmasked partially?
-        # Safer to return original text (transparent fallback) — but we try unmask first.
-        # If many placeholders lost, original is safer.
-        # Heuristic: if >50% placeholders lost, fallback to original
-        from .masking import _PLACEHOLDER_FUZZY_RE, _PLACEHOLDER_RE
-
-        found_ids = set(int(x) for x in _PLACEHOLDER_RE.findall(translated_masked))
-        for m in _PLACEHOLDER_FUZZY_RE.finditer(translated_masked):
-            idx_str = m.group(1)
-            if idx_str is not None:
-                found_ids.add(int(idx_str))
-
-        found = len(found_ids)
-        # Use <= 0.5 (not <) so that losing exactly half the placeholders
-        # also triggers the safe fallback (e.g. 1 lost out of 2 = 50% loss).
-        if found <= len(mapping) * 0.5:
-            extra2 = {
-                "direction": direction,
-                "reason": "placeholder-mutated-heavy-fallback",
-                "backend": backend,
-                "expected": len(mapping),
-                "found": found,
-            }
+    translated_masked = ""
+    for attempt in range(max_retries + 1):
+        strong = attempt > 0
+        # If masked text has no Japanese (JA→EN) we already checked outside,
+        # but keep for EN→JA always translate.
+        try:
+            translated_masked = _call_manager(direction, masked, manager, strong)
+        except Exception as exc:
+            extra = {"direction": direction, "reason": "argos-error", "backend": backend, "error": str(exc)}
             if chunk_index is not None:
-                extra2["chunk_index"] = chunk_index
-            logger.warning("translation-fallback", extra=extra2)
+                extra["chunk_index"] = chunk_index
+            if attempt < max_retries:
+                extra["attempt"] = attempt + 1
+                extra["reason"] = "retry-on-error"
+                logger.warning("translation-retry", extra=extra)
+                continue
+            logger.warning("translation-failed", extra=extra)
             return text
 
-    unmasked = unmask_text(translated_masked, mapping)
+        # Guard: placeholder mutation → retry with strong prompt (verbatim
+        # directive) before falling back to the original text.
+        if mapping and has_placeholder_mutation(translated_masked, mapping):
+            from .masking import _PLACEHOLDER_FUZZY_RE, _PLACEHOLDER_RE
 
-    # Post-unmask safety guard: if unmasked text still leaks raw placeholder prefix,
-    # fallback to original text to prevent showing broken placeholders to user
-    from .masking import _PLACEHOLDER_PREFIX
+            found_ids = set(int(x) for x in _PLACEHOLDER_RE.findall(translated_masked))
+            for m in _PLACEHOLDER_FUZZY_RE.finditer(translated_masked):
+                idx_str = m.group(1)
+                if idx_str is not None:
+                    found_ids.add(int(idx_str))
+            found = len(found_ids)
+            # Use <= 0.5 (not <) so that losing exactly half the placeholders
+            # also triggers the safe fallback (e.g. 1 lost out of 2 = 50% loss).
+            if found > len(mapping) * 0.5:
+                # Light mutation: survived placeholders are restored via
+                # unmask below; kept as observability (pre-existing reason).
+                extra_light = {
+                    "direction": direction,
+                    "reason": "placeholder-mutated",
+                    "backend": backend,
+                    "expected": len(mapping),
+                }
+                if chunk_index is not None:
+                    extra_light["chunk_index"] = chunk_index
+                logger.warning("translation-placeholder-mutated", extra=extra_light)
+            else:
+                if attempt < max_retries:
+                    logger.warning(
+                        "translation-retry",
+                        extra={
+                            "direction": direction,
+                            "reason": "placeholder-mutated-retry",
+                            "backend": backend,
+                            "attempt": attempt + 1,
+                            **({"chunk_index": chunk_index} if chunk_index is not None else {}),
+                        },
+                    )
+                    continue
+                extra2 = {
+                    "direction": direction,
+                    "reason": "placeholder-mutated-heavy-fallback",
+                    "backend": backend,
+                    "expected": len(mapping),
+                    "found": found,
+                }
+                if chunk_index is not None:
+                    extra2["chunk_index"] = chunk_index
+                logger.warning("translation-fallback", extra=extra2)
+                return text
 
-    if mapping and _PLACEHOLDER_PREFIX in unmasked:
-        extra_leak = {
-            "direction": direction,
-            "reason": "placeholder-leak-fallback",
-            "backend": backend,
-        }
-        if chunk_index is not None:
-            extra_leak["chunk_index"] = chunk_index
-        logger.warning("translation-fallback", extra=extra_leak)
-        return text
+        unmasked = unmask_text(translated_masked, mapping)
 
-    return strip_stop_tokens(unmasked)
+        from .masking import _PLACEHOLDER_PREFIX
+
+        if mapping and _PLACEHOLDER_PREFIX in unmasked:
+            if attempt < max_retries:
+                logger.warning(
+                    "translation-retry",
+                    extra={
+                        "direction": direction,
+                        "reason": "placeholder-leak-retry",
+                        "backend": backend,
+                        "attempt": attempt + 1,
+                        **({"chunk_index": chunk_index} if chunk_index is not None else {}),
+                    },
+                )
+                continue
+            extra_leak = {
+                "direction": direction,
+                "reason": "placeholder-leak-fallback",
+                "backend": backend,
+            }
+            if chunk_index is not None:
+                extra_leak["chunk_index"] = chunk_index
+            logger.warning("translation-fallback", extra=extra_leak)
+            return text
+
+        if _is_wrong_language_output(unmasked, masked, direction):
+            if attempt < max_retries:
+                logger.warning(
+                    "translation-retry",
+                    extra={
+                        "direction": direction,
+                        "reason": "wrong-language-retry",
+                        "backend": backend,
+                        "attempt": attempt + 1,
+                        **({"chunk_index": chunk_index} if chunk_index is not None else {}),
+                    },
+                )
+                continue
+            logger.warning(
+                "translation-fallback",
+                extra={
+                    "direction": direction,
+                    "reason": "wrong-language-fallback",
+                    "backend": backend,
+                    **({"chunk_index": chunk_index} if chunk_index is not None else {}),
+                },
+            )
+            return text
+
+        return strip_stop_tokens(unmasked)
+
+    return text
 
 
 def _translate_chunked(

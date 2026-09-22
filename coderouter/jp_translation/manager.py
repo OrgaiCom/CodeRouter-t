@@ -33,6 +33,7 @@ class TranslatorManager:
         cat_timeout_s: float = 30.0,
         cat_max_new_tokens: int = 2048,
         cat_fallback_to_argos: bool = True,
+        cat_retry_wrong_language: int = 2,
     ) -> None:
         self._model_dir = model_dir
         self._requested_device = device
@@ -45,6 +46,7 @@ class TranslatorManager:
         self._cat_timeout_s = cat_timeout_s
         self._cat_max_new_tokens = cat_max_new_tokens
         self._cat_fallback_to_argos = cat_fallback_to_argos
+        self._cat_retry_wrong_language = max(0, min(2, int(cat_retry_wrong_language)))
         self._effective_device: str = "cpu"
         self._lock = threading.Lock()
         self._available = False
@@ -259,7 +261,7 @@ class TranslatorManager:
             return self._available and self._cat_backend is not None and self._cat_backend.is_available()
         return self._available and self._ja_en is not None and self._en_ja is not None
 
-    def translate_ja_to_en(self, text: str) -> str:
+    def translate_ja_to_en(self, text: str, *, strong: bool = False) -> str:
         """日本語→英語翻訳。内部で Lock 取得、失敗時は原文を返す。同期ブロッキングAPI。"""
         if not self.is_available():
             return text
@@ -268,7 +270,10 @@ class TranslatorManager:
         with self._lock:
             try:
                 if self._backend == "cat_translate":
-                    return self._cat_backend.translate(text, "ja_to_en")
+                    try:
+                        return self._cat_backend.translate(text, "ja_to_en", strong=strong)
+                    except TypeError:
+                        return self._cat_backend.translate(text, "ja_to_en")
                 # Argos translate API: .translate(text) or argostranslate.translate.translate
                 if hasattr(self._ja_en, "translate"):
                     return self._ja_en.translate(text)  # type: ignore[no-any-return]
@@ -280,7 +285,7 @@ class TranslatorManager:
                 logger.warning("translation-ja-en-failed", extra={"error": str(exc)})
                 return text
 
-    def translate_en_to_ja(self, text: str) -> str:
+    def translate_en_to_ja(self, text: str, *, strong: bool = False) -> str:
         """英語→日本語翻訳。内部で Lock 取得、失敗時は原文を返す。同期ブロッキングAPI。"""
         if not self.is_available():
             return text
@@ -289,7 +294,10 @@ class TranslatorManager:
         with self._lock:
             try:
                 if self._backend == "cat_translate":
-                    return self._cat_backend.translate(text, "en_to_ja")
+                    try:
+                        return self._cat_backend.translate(text, "en_to_ja", strong=strong)
+                    except TypeError:
+                        return self._cat_backend.translate(text, "en_to_ja")
                 if hasattr(self._en_ja, "translate"):
                     return self._en_ja.translate(text)  # type: ignore[no-any-return]
                 if self._translate_module and hasattr(self._translate_module, "translate"):

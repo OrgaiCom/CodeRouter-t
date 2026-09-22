@@ -2540,6 +2540,12 @@ class TranslationConfig(BaseModel):
         default=True,
         description="If CAT server startup fails, fall back to the existing Argos backend.",
     )
+    cat_retry_wrong_language: int = Field(
+        default=2,
+        ge=0,
+        le=2,
+        description="CAT en_to_ja wrong-language (EN→EN paraphrase) retries with the emphasized prompt. Timeout unchanged.",
+    )
     # v2.18: 128K token support — chunked translation
     max_buffer_tokens: int = Field(
         default=131072,

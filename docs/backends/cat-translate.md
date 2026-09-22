@@ -13,7 +13,11 @@ translation:
   cat_timeout_s: 30
   cat_max_new_tokens: 2048
   cat_fallback_to_argos: true
+  cat_retry_wrong_language: 2
 ```
+
+EN→JAで英語のまま返った場合（EN→ENパラフレーズ）は、強調プロンプトで最大2回再試行し、
+それでも日本語化されなければ原文を返します（タイムアウト延長なし）。
 
 CAT利用時は `cat_fallback_to_argos: true` (既定) にしておくと、llama-server不在時に既存Argosへ自動フォールバックします。
 

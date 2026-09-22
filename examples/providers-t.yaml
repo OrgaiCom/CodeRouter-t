@@ -88,3 +88,4 @@ translation:
   cat_model: CAT-Translate-1.4b
   cat_max_new_tokens: 2048
   cat_fallback_to_argos: true
+  cat_retry_wrong_language: 2

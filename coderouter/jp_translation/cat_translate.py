@@ -19,6 +19,34 @@ _STOP_TOKENS: tuple[str, ...] = (
     "<|eot_id|>",
 )
 
+_SYSTEM_PROMPT = (
+    "You are a translation engine. Output only the translation. "
+    "Do not paraphrase, summarize, or explain."
+)
+
+
+def _build_prompt(direction: str, text: str, strong: bool = False) -> tuple[str | None, str]:
+    """Build (system, user) prompt for ``direction``.
+
+    ``strong=False`` keeps the official prompt byte-identical
+    (single user message, no system role). ``strong=True`` is the
+    emphasized retry variant: bold instruction + output-only
+    constraint + placeholder-preservation directive.
+    """
+    source, target = _DIRECTIONS[direction]
+    if not strong:
+        return None, f"Translate the following {source} text into {target}.\n\n{text}"
+    system = (
+        f"{_SYSTEM_PROMPT} Translate {source} into {target}. "
+        "Keep __CR_PROTECTED_<n>__ placeholders verbatim."
+    )
+    user = (
+        f"**Translate the following {source} text into {target}.**\n\n"
+        "Output translation only, no explanations.\n\n"
+        f"---\n{text}\n---"
+    )
+    return system, user
+
 
 def strip_stop_tokens(text: str) -> str:
     """Strip trailing EOS tokens (and leading BOS tokens) from translated text.
@@ -95,16 +123,23 @@ class CatTranslateBackend:
     def is_available(self) -> bool:
         return self._available
 
-    def translate(self, text: str, direction: str) -> str:
+    def translate(self, text: str, direction: str, *, strong: bool = False) -> str:
         if direction not in _DIRECTIONS:
             raise ValueError(f"unsupported CAT-Translate direction: {direction}")
         if not text.strip():
             return text
-        source, target = _DIRECTIONS[direction]
-        prompt = f"Translate the following {source} text into {target}.\n\n{text}"
+        system, prompt = _build_prompt(direction, text, strong)
+        if system is None:
+            messages = [{"role": "user", "content": prompt}]
+        else:
+            messages = [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ]
         # 4096-char chunks (~2k tokens) need a proportionally large output
         # budget; the fixed default (512) would truncate long chunks.
         # Rough estimate: 1 char ~= 2 tokens worst case, capped at 8192 (model ctx).
+        # Timeout is intentionally NOT extended on retries (operator decision).
         max_tokens = max(self.max_new_tokens, min(8192, len(text) * 2 + 64))
         # Leave room for the prompt itself inside the 8192 context window
         # (conservative 1 char ~= 1 token for the input side).
@@ -113,7 +148,7 @@ class CatTranslateBackend:
             f"{self.endpoint}/chat/completions",
             json={
                 "model": self.model,
-                "messages": [{"role": "user", "content": prompt}],
+                "messages": messages,
                 "temperature": 0.0,
                 "top_p": 1.0,
                 "max_tokens": max_tokens,
