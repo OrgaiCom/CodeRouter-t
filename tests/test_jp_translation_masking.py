@@ -494,3 +494,77 @@ def test_translate_response_skips_when_already_japanese():
     # Original text must be preserved intact without reverse-translation
     assert result.content[0]["text"] == user_case
 
+
+# ---------------------------------------------------------------------------
+# Task-prompt skip (JA→EN): subagent instructions stay in English
+# ---------------------------------------------------------------------------
+
+_TASK_PROMPT = (
+    "You are a subagent dispatched via the Task tool. Investigate the authentication "
+    "bug in src/auth.ts, run the existing test suite, and report the root cause with "
+    "a minimal reproduction and a proposed fix. "
+    "Original user request: バグを直して"
+)
+
+
+def test_is_task_like_prompt_skips_long_english_with_marker():
+    from coderouter.jp_translation.translator import _is_task_like_prompt
+
+    assert _is_task_like_prompt(_TASK_PROMPT) is True
+
+
+def test_is_task_like_prompt_keeps_short_user_request():
+    from coderouter.jp_translation.translator import _is_task_like_prompt
+
+    # Short user request mentioning subagent must still be translated.
+    assert _is_task_like_prompt("subagentを使ってバグを直して") is False
+    assert _is_task_like_prompt("src/main.ts の getUser() を修正して") is False
+    assert _is_task_like_prompt("Hello world") is False
+
+
+def test_request_translation_skips_task_prompt_block():
+    manager = Mock()
+    manager.is_available.return_value = True
+    manager.translate_ja_to_en.side_effect = lambda t: f"EN:{t}"
+
+    req = AnthropicRequest(
+        model="test",
+        messages=[AnthropicMessage(role="user", content=[{"type": "text", "text": _TASK_PROMPT}])],
+        max_tokens=1024,
+    )
+    result = translate_anthropic_request_ja_to_en(req, manager)
+    manager.translate_ja_to_en.assert_not_called()
+    assert result.messages[0].content[0]["text"] == _TASK_PROMPT  # type: ignore
+
+
+def test_request_translation_skips_task_prompt_str_form():
+    manager = Mock()
+    manager.is_available.return_value = True
+    manager.translate_ja_to_en.side_effect = lambda t: f"EN:{t}"
+
+    req = AnthropicRequest(
+        model="test",
+        messages=[AnthropicMessage(role="user", content=_TASK_PROMPT)],
+        max_tokens=1024,
+    )
+    result = translate_anthropic_request_ja_to_en(req, manager)
+    manager.translate_ja_to_en.assert_not_called()
+    assert result.messages[0].content == _TASK_PROMPT
+
+
+def test_request_translation_still_translates_normal_mixed_after_task_skip():
+    """A normal mixed request in the same suite still translates (no over-skip)."""
+    manager = Mock()
+    manager.is_available.return_value = True
+    manager.translate_ja_to_en.side_effect = lambda t: f"EN:{t}"
+
+    text = "src/main.ts の getUser() を修正して"
+    req = AnthropicRequest(
+        model="test",
+        messages=[AnthropicMessage(role="user", content=[{"type": "text", "text": text}])],
+        max_tokens=1024,
+    )
+    result = translate_anthropic_request_ja_to_en(req, manager)
+    assert manager.translate_ja_to_en.call_count == 1
+    assert result.messages[0].content[0]["text"] == f"EN:{text}"  # type: ignore
+

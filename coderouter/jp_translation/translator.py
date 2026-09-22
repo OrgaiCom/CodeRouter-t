@@ -49,6 +49,71 @@ def _is_claude_code_system_reminder(text: str) -> bool:
     return stripped.startswith("<system-reminder>") and stripped.endswith("</system-reminder>")
 
 
+# ---------------------------------------------------------------------------
+# Task-prompt skip (JA→EN): subagent instructions stay in English.
+# ---------------------------------------------------------------------------
+# Claude Code issues subagent instructions (Task tool ``prompt`` / the
+# subagent's own user turn) in English. When the prompt embeds a short
+# Japanese quote (e.g. the original user request), ``is_japanese`` fires on
+# a single character and the whole English instruction is sent through
+# JA→EN — wasteful and risky (placeholder/terminology mutation) for
+# LLM-to-LLM text that is more accurate left in English.
+# These blocks are skipped even though they contain Japanese.
+
+_TASK_MARKERS = frozenset(
+    {
+        "subagent",
+        "sub-agent",
+        "sub agent",
+        "<task",
+        "task tool",
+        "background agent",
+        "explore agent",
+        "plan agent",
+        "general-purpose",
+    }
+)
+
+_JA_CHAR_RE = re.compile(r"[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]")
+_LATIN_CHAR_RE = re.compile(r"[A-Za-z]")
+
+# Short or Japanese-dominant messages are always translated (normal user
+# requests such as "subagentを使ってバグを直して" must not be skipped).
+_TASK_MIN_LATIN_CHARS = 100
+_TASK_MAX_JA_RATIO_WITH_MARKER = 0.30
+_TASK_MIN_LATIN_CHARS_NO_MARKER = 200
+_TASK_MAX_JA_RATIO_NO_MARKER = 0.15
+
+
+def _is_task_like_prompt(text: str) -> bool:
+    """Return True when ``text`` looks like a subagent instruction.
+
+    Conditions (all must hold):
+    - contains Japanese (pure English is already skipped elsewhere), AND
+    - long English body (``latin >= 100``), AND
+    - Japanese is a small minority (ratio gate), AND
+    - either a Task marker is present or the English body is long enough
+      (``latin >= 200`` with an even stricter ratio) to be an instruction
+      echo rather than a user request.
+    """
+    if not text or not text.strip():
+        return False
+    if not is_japanese(text):
+        return False
+    ja_chars = len(_JA_CHAR_RE.findall(text))
+    latin_chars = len(_LATIN_CHAR_RE.findall(text))
+    total = ja_chars + latin_chars
+    if total == 0 or latin_chars < _TASK_MIN_LATIN_CHARS:
+        return False
+    ratio = ja_chars / total
+    if ratio >= _TASK_MAX_JA_RATIO_WITH_MARKER:
+        return False
+    lowered = text.casefold()
+    if any(m in lowered for m in _TASK_MARKERS):
+        return True
+    return latin_chars >= _TASK_MIN_LATIN_CHARS_NO_MARKER and ratio < _TASK_MAX_JA_RATIO_NO_MARKER
+
+
 def _find_code_spans(text: str) -> list[tuple[int, int]]:
     """Return list of (start,end) for ``` fences to avoid splitting inside."""
     return [m.span() for m in _CODE_FENCE_RE.finditer(text)]
@@ -535,6 +600,7 @@ def translate_anthropic_request_ja_to_en(
     _total_elapsed = 0.0
     _skipped_no_japanese = 0
     _skipped_empty = 0
+    _skipped_task_prompt = 0
 
     # Work on a deep copy via model_copy
     # AnthropicRequest.messages is list[AnthropicMessage], content is str | list[dict]
@@ -553,6 +619,20 @@ def translate_anthropic_request_ja_to_en(
             new_messages.append(msg)
             continue
         if isinstance(content, str):
+            # Task-prompt skip: subagent instructions stay in English even
+            # when they embed a short Japanese quote.
+            if role == "user" and content.strip() and _is_task_like_prompt(content):
+                _skipped_task_prompt += 1
+                logger.info(
+                    "translation-skipped",
+                    extra={
+                        "direction": "ja_to_en",
+                        "reason": "task-prompt-skipped",
+                        "block_chars": len(content),
+                    },
+                )
+                new_messages.append(msg)
+                continue
             # Short-form string content: only translate if user role and Japanese
             if role == "user" and is_japanese(content):
                 _t0 = _time.perf_counter()
@@ -600,6 +680,18 @@ def translate_anthropic_request_ja_to_en(
             if btype == "text":
                 # is_japanese optimization (design 3.3.1)
                 if _is_claude_code_system_reminder(btext):
+                    new_blocks.append(block)  # type: ignore[arg-type]
+                elif role == "user" and btext and btext.strip() and _is_task_like_prompt(btext):
+                    # Task-prompt skip: subagent instructions stay in English.
+                    _skipped_task_prompt += 1
+                    logger.info(
+                        "translation-skipped",
+                        extra={
+                            "direction": "ja_to_en",
+                            "reason": "task-prompt-skipped",
+                            "block_chars": len(btext),
+                        },
+                    )
                     new_blocks.append(block)  # type: ignore[arg-type]
                 elif role == "user" and btext and is_japanese(btext):
                     _t0 = _time.perf_counter()
@@ -672,7 +764,9 @@ def translate_anthropic_request_ja_to_en(
             else:
                 # No Japanese detected in request — log skipped translation for observability
                 # Include reason counts
-                if _skipped_no_japanese > 0:
+                if _skipped_task_prompt > 0:
+                    reason = "task-prompt-skipped"
+                elif _skipped_no_japanese > 0:
                     reason = "no-japanese-detected"
                 elif _skipped_empty > 0:
                     reason = "empty-block"
@@ -680,7 +774,7 @@ def translate_anthropic_request_ja_to_en(
                     reason = "no-translatable-block"
                 logger.info(
                     "translation-skipped",
-                    extra={"direction": "ja_to_en", "reason": reason, "skipped_no_japanese": _skipped_no_japanese, "skipped_empty": _skipped_empty},
+                    extra={"direction": "ja_to_en", "reason": reason, "skipped_no_japanese": _skipped_no_japanese, "skipped_empty": _skipped_empty, "skipped_task_prompt": _skipped_task_prompt},
                 )
                 log_translation_pair(
                     logger,
