@@ -55,9 +55,13 @@ if "%DO_TRANSLATE%"=="" (
 if "%DO_TRANSLATE%"=="" set DO_TRANSLATE=Y
 
 set MODEL_TIER=standard
-set TRANSLATION_BACKEND=argos
+set TRANSLATION_BACKEND=cat_translate
 if /i "%~1"=="cat" set TRANSLATION_BACKEND=cat_translate
 if /i "%~2"=="cat" set TRANSLATION_BACKEND=cat_translate
+if /i "%~1"=="argos" set TRANSLATION_BACKEND=argos
+if /i "%~2"=="argos" set TRANSLATION_BACKEND=argos
+if /i "%~1"=="standard" set TRANSLATION_BACKEND=argos
+if /i "%~2"=="standard" set TRANSLATION_BACKEND=argos
 if /i "%DO_TRANSLATE%"=="Y" goto :do_translate_setup
 goto :skip_translate_setup
 
@@ -73,8 +77,12 @@ goto :skip_translate_setup
     echo    [2] Argos High-Quality  - OPUS-MT based (about 1GB, takes time to build)
     echo    [3] CAT-Translate 1.4B - llama-server + GGUF (about 931MB)
     set BACKEND_CHOICE=
-    set /p BACKEND_CHOICE="Select [1/2/3] (default: 1): "
+    set /p BACKEND_CHOICE="Select [1/2/3] (default: 3): "
+    if "%BACKEND_CHOICE%"=="1" set TRANSLATION_BACKEND=argos
+    if "%BACKEND_CHOICE%"=="1" set MODEL_TIER=standard
+    if "%BACKEND_CHOICE%"=="2" set TRANSLATION_BACKEND=argos
     if "%BACKEND_CHOICE%"=="2" set MODEL_TIER=high-quality
+    if "%BACKEND_CHOICE%"=="" set TRANSLATION_BACKEND=cat_translate
     if "%BACKEND_CHOICE%"=="3" set TRANSLATION_BACKEND=cat_translate
 :skip_tier_prompt
     if /i "%~2"=="hq" set MODEL_TIER=high-quality
