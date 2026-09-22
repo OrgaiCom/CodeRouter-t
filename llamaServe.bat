@@ -4,6 +4,8 @@ setlocal
 
 cd /d "%~dp0"
 
+set "LLAMA_N_GPU_LAYERS=0"
+
 set "CAT_MODEL=%~dp0models\cat-translate\CAT-Translate-1.4b.Q4_K_M.gguf"
 if not defined LLAMA_PORT set "LLAMA_PORT=8080"
 if not defined LLAMA_CTX_SIZE set "LLAMA_CTX_SIZE=8192"
