@@ -9,6 +9,7 @@ Design: doc/翻訳層設計書.md §3.3, §7
 """
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -390,6 +391,112 @@ def _translate_chunked(
     return strip_stop_tokens("".join(translated_parts))
 
 
+# ---------------------------------------------------------------------------
+# Pure-JSON title-only translation (EN→JA response path)
+# ---------------------------------------------------------------------------
+
+_JSON_TITLE_KEYS = frozenset({"title"})
+
+# Preamble markers: model sometimes echoes the translation instruction
+# (e.g. "以下の英語の文章を日本語に翻訳します。") instead of translating.
+# If a translated *value* contains one of these while the original did not,
+# that value falls back to the original.
+_VALUE_PREAMBLE_MARKERS = (
+    "翻訳します",
+    "Translate the following",
+    "Translation:",
+    "Japanese translation",
+)
+
+
+def _is_translatable_title_value(value: object) -> bool:
+    """Return True when a title value should be sent to the translator."""
+    return (
+        isinstance(value, str)
+        and bool(value.strip())
+        and not is_already_japanese(value)
+    )
+
+
+def _collect_title_parents(obj: Any, out: list[tuple[dict, str]]) -> None:
+    """Collect (parent_dict, key) pairs whose key is a title key, recursively."""
+    if isinstance(obj, dict):
+        for key, val in obj.items():
+            if isinstance(key, str) and key.casefold() in _JSON_TITLE_KEYS:
+                out.append((obj, key))
+            _collect_title_parents(val, out)
+    elif isinstance(obj, list):
+        for item in obj:
+            _collect_title_parents(item, out)
+
+
+def _try_translate_json_titles(
+    text: str,
+    direction: str,
+    manager: TranslatorManager,
+) -> str | None:
+    """Translate only title values inside a pure-JSON text block.
+
+    Returns the rebuilt JSON string when ``text`` parses as JSON
+    (dict/list), otherwise ``None`` to fall through to full-text
+    translation. Pure JSON without translatable titles returns the
+    original text unchanged so the structure is never corrupted by
+    whole-block translation.
+    """
+    stripped = text.strip()
+    if not stripped or stripped[0] not in "{[":
+        return None
+    try:
+        obj = json.loads(stripped)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(obj, (dict, list)):
+        return None
+
+    parents: list[tuple[dict, str]] = []
+    _collect_title_parents(obj, parents)
+    targets = [(p, k) for p, k in parents if _is_translatable_title_value(p[k])]
+    if not targets:
+        logger.info(
+            "translation-skipped",
+            extra={"direction": direction, "reason": "json-no-title-values"},
+        )
+        return text
+
+    changed = False
+    for parent, key in targets:
+        original = parent[key]
+        assert isinstance(original, str)
+        translated = _translate_with_protection(original, direction, manager)
+        if translated != original and any(
+            m in translated and m not in original for m in _VALUE_PREAMBLE_MARKERS
+        ):
+            logger.warning(
+                "translation-fallback",
+                extra={"direction": direction, "reason": "json-title-preamble-fallback"},
+            )
+            continue
+        if translated != original:
+            parent[key] = translated
+            changed = True
+
+    if not changed:
+        return text
+    try:
+        rebuilt = json.dumps(obj, ensure_ascii=False, separators=(", ", ": "))
+    except (TypeError, ValueError):
+        logger.warning(
+            "translation-fallback",
+            extra={"direction": direction, "reason": "json-rebuild-fallback"},
+        )
+        return text
+    logger.info(
+        "translation-json-title",
+        extra={"direction": direction, "reason": "json-title-values", "values": len(targets)},
+    )
+    return rebuilt
+
+
 def translate_anthropic_request_ja_to_en(
     req: AnthropicRequest,
     manager: TranslatorManager,
@@ -650,7 +757,11 @@ def translate_anthropic_response_en_to_ja(
                     new_content.append(block)  # type: ignore[arg-type]
                     continue
                 _t0 = _time.perf_counter()
-                new_text = _translate_chunked(btext, "en_to_ja", manager, chunk_size_chars)
+                _json_title_text = _try_translate_json_titles(btext, "en_to_ja", manager)
+                if _json_title_text is not None:
+                    new_text = _json_title_text
+                else:
+                    new_text = _translate_chunked(btext, "en_to_ja", manager, chunk_size_chars)
                 _elapsed = _time.perf_counter() - _t0
                 if new_text != btext:
                     _orig_batch.append(btext)
