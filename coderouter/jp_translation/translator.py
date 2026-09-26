@@ -16,7 +16,7 @@ from typing import Any
 from coderouter.logging import get_logger, log_translation_pair
 from coderouter.translation.anthropic import AnthropicRequest, AnthropicResponse
 
-from .cat_translate import strip_stop_tokens
+from .cat_translate import strip_preamble, strip_stop_tokens
 from .manager import TranslatorManager
 from .masking import (
     has_placeholder_mutation,
@@ -258,7 +258,8 @@ def _translate_with_protection(
     # Backend name for log observability (Argos/CAT). Kept as extra field;
     # reason strings stay stable so existing log parsers keep working.
     backend = getattr(manager, "_backend", "argos")
-    if backend == "cat_translate" and direction == "en_to_ja":
+    prompt_mode = getattr(manager, "_cat_prompt_mode", "official")
+    if backend == "cat_translate" and direction == "en_to_ja" and prompt_mode != "auto":
         max_retries = getattr(manager, "_cat_retry_wrong_language", 2)
     else:
         max_retries = 0
@@ -338,6 +339,34 @@ def _translate_with_protection(
 
         unmasked = unmask_text(translated_masked, mapping)
 
+        # Normal-path preamble guard (EN→JA instruction echo):
+        # CAT model may prepend「以下の英文を日本語に翻訳してください。」.
+        # Strip head-only; empty result → fallback to original.
+        if direction == "en_to_ja":
+            stripped = strip_preamble(unmasked)
+            if stripped != unmasked:
+                logger.info(
+                    "translation-preamble-stripped",
+                    extra={
+                        "direction": direction,
+                        "reason": "preamble-stripped",
+                        "backend": backend,
+                        **({"chunk_index": chunk_index} if chunk_index is not None else {}),
+                    },
+                )
+                unmasked = stripped
+                if not unmasked.strip():
+                    logger.warning(
+                        "translation-fallback",
+                        extra={
+                            "direction": direction,
+                            "reason": "preamble-only-fallback",
+                            "backend": backend,
+                            **({"chunk_index": chunk_index} if chunk_index is not None else {}),
+                        },
+                    )
+                    return text
+
         from .masking import _PLACEHOLDER_PREFIX
 
         if mapping and _PLACEHOLDER_PREFIX in unmasked:
@@ -363,7 +392,7 @@ def _translate_with_protection(
             logger.warning("translation-fallback", extra=extra_leak)
             return text
 
-        if _is_wrong_language_output(unmasked, masked, direction):
+        if prompt_mode != "auto" and _is_wrong_language_output(unmasked, masked, direction):
             if attempt < max_retries:
                 logger.warning(
                     "translation-retry",
@@ -471,6 +500,9 @@ _VALUE_PREAMBLE_MARKERS = (
     "Translate the following",
     "Translation:",
     "Japanese translation",
+    "以下の英文を日本語に翻訳してください",
+    "以下の英文を日本語に",
+    "以下を日本語に翻訳",
 )
 
 

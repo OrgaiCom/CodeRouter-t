@@ -34,6 +34,7 @@ class TranslatorManager:
         cat_max_new_tokens: int = 2048,
         cat_fallback_to_argos: bool = True,
         cat_retry_wrong_language: int = 2,
+        cat_prompt_mode: str = "official",
     ) -> None:
         self._model_dir = model_dir
         self._requested_device = device
@@ -47,6 +48,9 @@ class TranslatorManager:
         self._cat_max_new_tokens = cat_max_new_tokens
         self._cat_fallback_to_argos = cat_fallback_to_argos
         self._cat_retry_wrong_language = max(0, min(2, int(cat_retry_wrong_language)))
+        if cat_prompt_mode not in ("structured", "official", "auto", "directed"):
+            raise ValueError(f"unsupported CAT prompt mode: {cat_prompt_mode}")
+        self._cat_prompt_mode = cat_prompt_mode
         self._effective_device: str = "cpu"
         self._lock = threading.Lock()
         self._available = False
@@ -96,13 +100,14 @@ class TranslatorManager:
                     model=self._cat_model,
                     timeout_s=self._cat_timeout_s,
                     max_new_tokens=self._cat_max_new_tokens,
+                    prompt_mode=self._cat_prompt_mode,
                 )
                 cat.load()
                 self._cat_backend = cat
                 self._available = True
                 logger.info(
                     "translation-manager-loaded",
-                    extra={"backend": "cat_translate", "endpoint": self._cat_endpoint, "model": self._cat_model},
+                    extra={"backend": "cat_translate", "endpoint": self._cat_endpoint, "model": self._cat_model, "prompt_mode": self._cat_prompt_mode},
                 )
                 return
             except Exception as exc:
@@ -271,9 +276,12 @@ class TranslatorManager:
             try:
                 if self._backend == "cat_translate":
                     try:
-                        return self._cat_backend.translate(text, "ja_to_en", strong=strong)
+                        return self._cat_backend.translate(text, "ja_to_en", strong=strong, mode=self._cat_prompt_mode)
                     except TypeError:
-                        return self._cat_backend.translate(text, "ja_to_en")
+                        try:
+                            return self._cat_backend.translate(text, "ja_to_en", strong=strong)
+                        except TypeError:
+                            return self._cat_backend.translate(text, "ja_to_en")
                 # Argos translate API: .translate(text) or argostranslate.translate.translate
                 if hasattr(self._ja_en, "translate"):
                     return self._ja_en.translate(text)  # type: ignore[no-any-return]
@@ -295,9 +303,12 @@ class TranslatorManager:
             try:
                 if self._backend == "cat_translate":
                     try:
-                        return self._cat_backend.translate(text, "en_to_ja", strong=strong)
+                        return self._cat_backend.translate(text, "en_to_ja", strong=strong, mode=self._cat_prompt_mode)
                     except TypeError:
-                        return self._cat_backend.translate(text, "en_to_ja")
+                        try:
+                            return self._cat_backend.translate(text, "en_to_ja", strong=strong)
+                        except TypeError:
+                            return self._cat_backend.translate(text, "en_to_ja")
                 if hasattr(self._en_ja, "translate"):
                     return self._en_ja.translate(text)  # type: ignore[no-any-return]
                 if self._translate_module and hasattr(self._translate_module, "translate"):

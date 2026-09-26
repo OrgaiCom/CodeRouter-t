@@ -89,3 +89,4 @@ translation:
   cat_max_new_tokens: 2048
   cat_fallback_to_argos: true
   cat_retry_wrong_language: 2
+  cat_prompt_mode: official    # structured | official | auto | directed (既定 official)

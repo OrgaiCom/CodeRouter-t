@@ -19,33 +19,76 @@ _STOP_TOKENS: tuple[str, ...] = (
     "<|eot_id|>",
 )
 
-_SYSTEM_PROMPT = (
-    "You are a translation engine. Output only the translation. "
-    "Do not paraphrase, summarize, or explain."
+_AUTO_SYSTEM_PROMPT = (
+    "If the user prompt is English, translate it into Japanese. "
+    "If the user prompt is Japanese, translate it into English. "
+    "Output translation only. Do not include the instruction, preamble, or explanations. "
+    "Keep __CR_PROTECTED_<n>__ placeholders verbatim."
 )
 
+_DIRECTED_SYSTEM_PROMPTS = {
+    "ja_to_en": (
+        "英語に翻訳してください。"
+        "翻訳結果のみを出力し、指示文や前置き、説明は含めないでください。"
+        "__CR_PROTECTED_<n>__プレースホルダーはそのまま保持してください。"
+    ),
+    "en_to_ja": (
+        "Translate to Japanese. "
+        "Output translation only. Do not include the instruction, preamble, or explanations. "
+        "Keep __CR_PROTECTED_<n>__ placeholders verbatim."
+    ),
+}
 
-def _build_prompt(direction: str, text: str, strong: bool = False) -> tuple[str | None, str]:
+_PROMPT_MODES = ("structured", "official", "auto", "directed")
+
+
+def _build_prompt(
+    direction: str,
+    text: str,
+    strong: bool = False,
+    mode: str = "official",
+) -> tuple[str | None, str]:
     """Build (system, user) prompt for ``direction``.
 
-    ``strong=False`` keeps the official prompt byte-identical
-    (single user message, no system role). ``strong=True`` is the
-    emphasized retry variant: bold instruction + output-only
-    constraint + placeholder-preservation directive.
+    All modes use a single user message with no system role:
+    CAT-Translate-1.4b was trained on the official single-user format and
+    mishandles the ``system`` role (it echoes/translates the system text
+    instead of the user text — observed as the system prompt leaking into
+    the translation output).
+
+    Modes (``translation.cat_prompt_mode``):
+    - ``official`` (default): legacy single user message, no system role.
+    - ``directed``: instruction in the source language
+      (JA→EN: Japanese, EN→JA: English) + blank line + raw text.
+      ``strong`` is ignored.
+    - ``auto``: auto-detect instruction + blank line + raw text.
+      ``direction``/``strong`` are ignored.
+    - ``structured``: instruction + output-only constraint (normal) or
+      bold instruction + delimiters + placeholder directive (strong retry).
     """
+    if mode not in _PROMPT_MODES:
+        raise ValueError(f"unsupported CAT prompt mode: {mode}")
+    if mode == "auto":
+        return None, f"{_AUTO_SYSTEM_PROMPT}\n\n{text}"
+    if mode == "directed":
+        if direction not in _DIRECTED_SYSTEM_PROMPTS:
+            raise ValueError(f"unsupported CAT-Translate direction: {direction}")
+        return None, f"{_DIRECTED_SYSTEM_PROMPTS[direction]}\n\n{text}"
     source, target = _DIRECTIONS[direction]
-    if not strong:
+    if mode == "official":
         return None, f"Translate the following {source} text into {target}.\n\n{text}"
-    system = (
-        f"{_SYSTEM_PROMPT} Translate {source} into {target}. "
-        "Keep __CR_PROTECTED_<n>__ placeholders verbatim."
-    )
-    user = (
+    if not strong:
+        return None, (
+            f"Translate the following {source} text into {target}.\n"
+            "Output translation only. Do not include the instruction, preamble, or explanations.\n\n"
+            f"{text}"
+        )
+    return None, (
         f"**Translate the following {source} text into {target}.**\n\n"
-        "Output translation only, no explanations.\n\n"
+        "Output translation only, no explanations. "
+        "Keep __CR_PROTECTED_<n>__ placeholders verbatim.\n\n"
         f"---\n{text}\n---"
     )
-    return system, user
 
 
 def strip_stop_tokens(text: str) -> str:
@@ -75,6 +118,53 @@ def strip_stop_tokens(text: str) -> str:
     return result
 
 
+import re as _re
+
+# Instruction-echo preamble: model repeats the JA rendering of
+# "Translate the following English text into Japanese." instead of translating.
+# Only stripped from the head (max 2 lines) to avoid touching legitimate body text.
+_PREAMBLE_LINE_RES = (
+    _re.compile(r"^\s*以下の英文を日本語に翻訳してください[。．.]?\s*$"),
+    _re.compile(r"^\s*以下の英語.+を日本語に翻訳.*$"),
+    _re.compile(r"^\s*以下を日本語に翻訳.*$"),
+    _re.compile(r"^\s*Translate the following English text into Japanese\.?\s*$", _re.IGNORECASE),
+    _re.compile(r"^\s*(Japanese\s+)?Translation\s*:\s*$", _re.IGNORECASE),
+)
+
+_PREAMBLE_PREFIX_RES = (
+    _re.compile(r"^\s*以下の英文を日本語に翻訳してください[。．.]?\s*"),
+    _re.compile(r"^\s*Translate the following English text into Japanese\.?\s*", _re.IGNORECASE),
+)
+
+
+def strip_preamble(text: str) -> str:
+    """Strip leading instruction-echo lines (max 2) from translated text."""
+    if not text:
+        return text
+    lines = text.splitlines()
+    stripped_count = 0
+    while lines and stripped_count < 2:
+        first = lines[0]
+        if not first.strip():
+            lines.pop(0)
+            continue
+        if any(p.match(first) for p in _PREAMBLE_LINE_RES):
+            lines.pop(0)
+            stripped_count += 1
+            continue
+        # Same-line prefix: "以下の英文を...。本文" → keep body part
+        new_first = first
+        for p in _PREAMBLE_PREFIX_RES:
+            new_first = p.sub("", new_first, count=1)
+        if new_first != first:
+            lines[0] = new_first
+            stripped_count += 1
+        break
+    result = "\n".join(lines).lstrip()
+    # Stripped everything → return empty so caller can fallback
+    return result
+
+
 def _strip_fences(content: str) -> str:
     """Remove a wrapping ``` fence if the model echoed one around the translation."""
     stripped = content.strip()
@@ -88,10 +178,11 @@ def _strip_fences(content: str) -> str:
 
 
 def _clean_translated_text(content: str) -> str:
-    """Clean model output: strip wrapping fences and leaked stop tokens (e.g. </s>)."""
+    """Clean model output: strip wrapping fences, leaked stop tokens, and instruction echo."""
     cleaned = strip_stop_tokens(content.strip())
     cleaned = _strip_fences(cleaned)
     cleaned = strip_stop_tokens(cleaned.strip())
+    cleaned = strip_preamble(cleaned.strip())
     return cleaned
 
 
@@ -106,11 +197,15 @@ class CatTranslateBackend:
         max_new_tokens: int = 512,
         *,
         transport: httpx.BaseTransport | None = None,
+        prompt_mode: str = "official",
     ) -> None:
+        if prompt_mode not in _PROMPT_MODES:
+            raise ValueError(f"unsupported CAT prompt mode: {prompt_mode}")
         self.endpoint = endpoint.rstrip("/")
         self.model = model
         self.timeout_s = timeout_s
         self.max_new_tokens = max_new_tokens
+        self._prompt_mode = prompt_mode
         self._client = httpx.Client(timeout=timeout_s, transport=transport)
         self._available = False
 
@@ -123,12 +218,20 @@ class CatTranslateBackend:
     def is_available(self) -> bool:
         return self._available
 
-    def translate(self, text: str, direction: str, *, strong: bool = False) -> str:
+    def translate(
+        self,
+        text: str,
+        direction: str,
+        *,
+        strong: bool = False,
+        mode: str | None = None,
+    ) -> str:
         if direction not in _DIRECTIONS:
             raise ValueError(f"unsupported CAT-Translate direction: {direction}")
         if not text.strip():
             return text
-        system, prompt = _build_prompt(direction, text, strong)
+        effective_mode = mode or self._prompt_mode
+        system, prompt = _build_prompt(direction, text, strong, effective_mode)
         if system is None:
             messages = [{"role": "user", "content": prompt}]
         else:

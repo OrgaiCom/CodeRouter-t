@@ -2546,6 +2546,10 @@ class TranslationConfig(BaseModel):
         le=2,
         description="CAT en_to_ja wrong-language (EN→EN paraphrase) retries with the emphasized prompt. Timeout unchanged.",
     )
+    cat_prompt_mode: Literal["structured", "official", "auto", "directed"] = Field(
+        default="official",
+        description="CAT prompt format. structured=instruction+delimiters, official=single-line legacy, auto=raw text only with auto-detect system prompt, directed=raw text with direction-specific system language.",
+    )
     # v2.18: 128K token support — chunked translation
     max_buffer_tokens: int = Field(
         default=131072,

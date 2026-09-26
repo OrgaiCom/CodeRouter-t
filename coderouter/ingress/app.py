@@ -286,6 +286,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
                     cat_max_new_tokens=getattr(tcfg, "cat_max_new_tokens", 2048),
                     cat_fallback_to_argos=getattr(tcfg, "cat_fallback_to_argos", True),
                     cat_retry_wrong_language=getattr(tcfg, "cat_retry_wrong_language", 2),
+                    cat_prompt_mode=getattr(tcfg, "cat_prompt_mode", "official"),
                 )
                 _tr_start = _time.monotonic()
                 # load() is sync blocking (Argos/CTranslate2 init). In lifespan async context

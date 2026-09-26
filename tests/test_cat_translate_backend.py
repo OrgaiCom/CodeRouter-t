@@ -24,6 +24,7 @@ def test_cat_backend_uses_official_prompt_and_openai_compatible_api() -> None:
         endpoint="http://cat.test/v1",
         model="CAT-Translate-1.4b",
         transport=httpx.MockTransport(handler),
+        prompt_mode="official",
     )
 
     assert backend.translate("バグを修正してください。", "ja_to_en") == "Please fix the bug."
@@ -159,7 +160,41 @@ def test_build_prompt_default_is_official_single_user_message() -> None:
     assert user == "Translate the following English text into Japanese.\n\nHello"
 
 
-def test_strong_prompt_is_emphasized_with_system_role() -> None:
+def test_build_prompt_official_is_single_user_message() -> None:
+    system, user = _build_prompt("en_to_ja", "Hello", False, "official")
+    assert system is None
+    assert user == "Translate the following English text into Japanese.\n\nHello"
+
+
+def test_build_prompt_structured_has_output_only_constraint() -> None:
+    system, user = _build_prompt("en_to_ja", "Hello", False, "structured")
+    assert system is None
+    assert "Translate the following English text into Japanese." in user
+    assert "Output translation only" in user
+    assert user.endswith("\n\nHello")
+
+
+def test_build_prompt_auto_ignores_direction_and_strong() -> None:
+    system_ja, user_ja = _build_prompt("ja_to_en", "Hello", True, "auto")
+    system_en, user_en = _build_prompt("en_to_ja", "Hello", True, "auto")
+    assert system_ja is None and system_en is None
+    assert user_ja == user_en
+    assert "If the user prompt is English" in user_ja
+    assert user_ja.endswith("\n\nHello")
+
+
+def test_build_prompt_directed_uses_source_language_instruction() -> None:
+    system_ja, user_ja = _build_prompt("ja_to_en", "こんにちは", False, "directed")
+    assert system_ja is None
+    assert "英語に翻訳してください" in user_ja
+    assert user_ja.endswith("\n\nこんにちは")
+    system_en, user_en = _build_prompt("en_to_ja", "Hello", True, "directed")
+    assert system_en is None
+    assert "Translate to Japanese" in user_en
+    assert user_en.endswith("\n\nHello")
+
+
+def test_strong_prompt_is_emphasized_single_user_message() -> None:
     import json as _json
 
     bodies: list[str] = []
@@ -173,13 +208,14 @@ def test_strong_prompt_is_emphasized_with_system_role() -> None:
         )
 
     backend = CatTranslateBackend(
-        endpoint="http://cat.test/v1", transport=httpx.MockTransport(handler)
+        endpoint="http://cat.test/v1", transport=httpx.MockTransport(handler),
+        prompt_mode="structured",
     )
     assert backend.translate("Hello", "en_to_ja", strong=True) == "こんにちは。"
     payload = _json.loads(bodies[0])
-    assert payload["messages"][0]["role"] == "system"
-    assert "translation engine" in payload["messages"][0]["content"].lower()
-    assert "**Translate the following English text into Japanese.**" in payload["messages"][1]["content"]
+    assert len(payload["messages"]) == 1
+    assert payload["messages"][0]["role"] == "user"
+    assert "**Translate the following English text into Japanese.**" in payload["messages"][0]["content"]
     assert "__CR_PROTECTED_" in payload["messages"][0]["content"]
     assert payload["temperature"] == 0.0
     assert "stop" in payload
@@ -217,3 +253,58 @@ def test_ja_to_en_direction_does_not_retry() -> None:
 
 def test_translation_config_retry_default_is_two() -> None:
     assert TranslationConfig().cat_retry_wrong_language == 2
+
+
+def test_translation_config_prompt_mode_default_is_official() -> None:
+    assert TranslationConfig().cat_prompt_mode == "official"
+
+
+def test_directed_mode_sends_single_user_message() -> None:
+    import json as _json
+
+    bodies: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(request.read().decode("utf-8"))
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "こんにちは"}}]},
+            request=request,
+        )
+
+    backend = CatTranslateBackend(
+        endpoint="http://cat.test/v1", transport=httpx.MockTransport(handler),
+        prompt_mode="directed",
+    )
+    assert backend._prompt_mode == "directed"
+    backend.translate("Hello", "en_to_ja")
+    payload = _json.loads(bodies[0])
+    assert len(payload["messages"]) == 1
+    assert payload["messages"][0]["role"] == "user"
+    assert "Translate to Japanese" in payload["messages"][0]["content"]
+    assert payload["messages"][0]["content"].endswith("\n\nHello")
+
+
+def test_auto_mode_sends_single_user_message() -> None:
+    import json as _json
+
+    bodies: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(request.read().decode("utf-8"))
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "hello"}}]},
+            request=request,
+        )
+
+    backend = CatTranslateBackend(
+        endpoint="http://cat.test/v1", transport=httpx.MockTransport(handler),
+        prompt_mode="auto",
+    )
+    backend.translate("Hello", "en_to_ja")
+    payload = _json.loads(bodies[0])
+    assert len(payload["messages"]) == 1
+    assert payload["messages"][0]["role"] == "user"
+    assert "If the user prompt is English" in payload["messages"][0]["content"]
+    assert payload["messages"][0]["content"].endswith("\n\nHello")
