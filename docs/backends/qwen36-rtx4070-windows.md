@@ -1,8 +1,7 @@
 # Windows: RTX 4070 Laptop（8GB）で Qwen3.6 35B-A3B を使う
 
 この構成は、Qwen3.6 35B-A3B の通常版（非MTP）を `llama-server` で起動し、
-CodeRouter の Fable (`thinking`) と Opus (`reasoning`) の両プロファイルに割り当てる。
-Sonnet と Haiku は既存の Ollama プロバイダーのままである。
+CodeRouter の全プロファイル（Fable, Opus, Sonnet, Haiku）に `coderouter-*-model` として割り当てる。
 
 ## 1. llama.cpp runtime
 
@@ -43,31 +42,28 @@ models\qwen3.6-35b-a3b\Qwen3.6-35B-A3B-UD-Q4_K_M.gguf
 `llamaQwenServe.bat` は以下を既定にする。
 
 ```text
--ngl 99 -ncmoe 26 -c 98304 -ctk q4_0 -ctv q4_0 --reasoning off
+-ngl 99 -ncmoe 31 -c 90000 -np 1 -ctk q4_0 -ctv q4_0 --reasoning off
 ```
 
-8GB VRAMは記事の12GBより少ない。起動できない、またはVRAMが不足する場合は、
-CPUへ退避するMoE層数を増やす。
+- **コンテキスト**: `90000`（90K）
+- **並列度**: `-np 1`（1スロット専用にすることで、不要なKVキャッシュ確保を防止）
+- **CPU MoE退避層数**: `QWEN_N_CPU_MOE=31`
+  - RTX 4070 Laptop（8188 MiB）の実機計測では、`31` で **7554 MiB 使用（空き 395 MiB）** となり、共有メモリ（メインRAM）へのスワップを完全に防ぎつつGPUリソースを最大限に活用できる。
+  - `30` 以下にすると空きが 15 MiB 以下になり、トークン生成時に共有メモリスワップが発生して極端に遅くなる。
+
+サーバーは `127.0.0.1:8080` にのみバインドされ、LANには公開されない。
+
+## 4. 起動と連携
+
+`startAll.bat` は先に Qwen サーバーを立ち上げ、VRAM を確保してから CAT-Translate、CodeRouter を起動する。
 
 ```bat
-set QWEN_N_CPU_MOE=30
-llamaQwenServe.bat
+startAll.bat
 ```
 
-次に `32`、`34` の順で試し、起動できる最小値を採用する。サーバーは
-`127.0.0.1:8080` にのみバインドされ、LANには公開されない。
+CodeRouter では以下の名前で全プロファイルからアクセス可能である：
+- `coderouter-fable-model` (thinking)
+- `coderouter-opus-model` (reasoning)
+- `coderouter-sonnet-model` (coding)
+- `coderouter-haiku-model` (general)
 
-MTP版は投機デコードで高速化する可能性がある一方、長文コンテキストのCUDA経路に
-未解決の問題があるため、この構成の標準にはしない。通常版が安定した後に、別途
-同じプロンプトとコンテキスト長で比較する。
-
-## 4. 確認
-
-`startAll.bat` はQwenサーバーの `/health` を最大5分待ってから CodeRouter を起動する。
-モデルが起動した後、次を実行する。
-
-```bat
-uv run coderouter doctor --check-model llamacpp-qwen3-6-35b-a3b
-```
-
-基本応答、ストリーミング、tool call を確認してから Fable／Opus プロファイルで利用する。

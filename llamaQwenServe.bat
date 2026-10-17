@@ -6,9 +6,9 @@ cd /d "%~dp0"
 
 if not defined QWEN_MODEL set "QWEN_MODEL=%~dp0models\qwen3.6-35b-a3b\Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"
 if not defined QWEN_PORT set "QWEN_PORT=8080"
-if not defined QWEN_CTX_SIZE set "QWEN_CTX_SIZE=98304"
+if not defined QWEN_CTX_SIZE set "QWEN_CTX_SIZE=90000"
 if not defined QWEN_N_GPU_LAYERS set "QWEN_N_GPU_LAYERS=99"
-if not defined QWEN_N_CPU_MOE set "QWEN_N_CPU_MOE=26"
+if not defined QWEN_N_CPU_MOE set "QWEN_N_CPU_MOE=31"
 if not defined QWEN_LLAMA_SERVER set "QWEN_LLAMA_SERVER=%~dp0runtime\llama.cpp\llama-server.exe"
 
 if not exist "%QWEN_MODEL%" (
@@ -36,6 +36,7 @@ echo ============================================================
 echo  Model        : %QWEN_MODEL%
 echo  URL          : http://127.0.0.1:%QWEN_PORT%/v1
 echo  Context      : %QWEN_CTX_SIZE%
+echo  Parallel     : 1
 echo  GPU layers   : %QWEN_N_GPU_LAYERS%
 echo  CPU MoE layer: %QWEN_N_CPU_MOE%
 echo.
@@ -46,6 +47,7 @@ echo.
     -m "%QWEN_MODEL%" ^
     --host 127.0.0.1 ^
     --port %QWEN_PORT% ^
+    -np 1 ^
     -ngl %QWEN_N_GPU_LAYERS% ^
     -ncmoe %QWEN_N_CPU_MOE% ^
     -c %QWEN_CTX_SIZE% ^

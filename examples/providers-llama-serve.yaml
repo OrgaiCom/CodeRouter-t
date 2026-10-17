@@ -1,0 +1,121 @@
+# ============================================================
+# CodeRouter-t providers.yaml (Ollama 3-model Custom Setup)
+# ============================================================
+
+allow_paid: false
+default_profile: coding
+
+mode_aliases:
+  fable: thinking
+  opus: reasoning
+  sonnet: coding
+  haiku: general
+
+providers:
+  # ① Fable 相当モデル (Qwen3.6 35B-A3B, llama.cpp 直結)
+  - name: coderouter-fable-model
+    kind: openai_compat
+    base_url: http://127.0.0.1:8080/v1
+    model: qwen3.6
+    paid: false
+    api_key_env: null
+    timeout_s: 600
+    output_filters: [strip_thinking]
+    capabilities:
+      chat: true
+      streaming: true
+      tools: true
+      thinking: false
+
+  # ② Opus 相当モデル (Qwen3.6 35B-A3B, llama.cpp 直結)
+  - name: coderouter-opus-model
+    kind: openai_compat
+    base_url: http://127.0.0.1:8080/v1
+    model: qwen3.6
+    paid: false
+    api_key_env: null
+    timeout_s: 600
+    output_filters: [strip_thinking]
+    capabilities:
+      chat: true
+      streaming: true
+      tools: true
+      thinking: false
+
+  # ③ Sonnet 相当モデル (Qwen3.6 35B-A3B, llama.cpp 直結)
+  - name: coderouter-sonnet-model
+    kind: openai_compat
+    base_url: http://127.0.0.1:8080/v1
+    model: qwen3.6
+    paid: false
+    api_key_env: null
+    timeout_s: 600
+    output_filters: [strip_thinking]
+    capabilities:
+      chat: true
+      streaming: true
+      tools: true
+      thinking: false
+
+  # ④ Haiku 相当モデル (Qwen3.6 35B-A3B, llama.cpp 直結)
+  - name: coderouter-haiku-model
+    kind: openai_compat
+    base_url: http://127.0.0.1:8080/v1
+    model: qwen3.6
+    paid: false
+    api_key_env: null
+    timeout_s: 600
+    output_filters: [strip_thinking]
+    capabilities:
+      chat: true
+      streaming: true
+      tools: true
+      thinking: false
+
+profiles:
+  # Fable 用プロファイル
+  - name: thinking
+    providers:
+      - coderouter-fable-model
+
+  # Opus 用プロファイル
+  - name: reasoning
+    providers:
+      - coderouter-opus-model
+
+  # Sonnet 用プロファイル (デフォルト)
+  - name: coding
+    providers:
+      - coderouter-sonnet-model
+
+  # Haiku 用プロファイル
+  - name: general
+    providers:
+      - coderouter-haiku-model
+
+# v2.16: ログフォーマット切替 — "json" (構造化) / "pretty" (INFO: ... 人間可読。規定)
+# providers.yaml で切替、または env CODEROUTER_T_LOG_FORMAT / --log-format で上書き
+log_format: pretty  # json | pretty
+
+translation:
+  enabled: true
+  device: cpu
+#  device: cuda
+  log_translations: false
+  verbose: true            # 新[translation]ペアは既定ON
+  log_tool_calls: true     # [tool call repair]も既定ON
+#  max_buffer_tokens: 131072
+  max_buffer_tokens: 128000
+  chunk_size_chars: 4096
+  chunk_timeout_s: 10.0
+  # CAT-Translate 1.4B (llama-server経由) を使う場合の例:
+  backend: cat_translate
+  # cat_endpoint defaults to http://127.0.0.1:8765/v1.
+  # The launch script (llamaTranslateServe.bat) honours the TRANSLATE_PORT env var;
+  # to keep them in sync, write the port as ${TRANSLATE_PORT} here:
+  #   cat_endpoint: http://127.0.0.1:${TRANSLATE_PORT}/v1
+  cat_endpoint: http://127.0.0.1:8765/v1
+  cat_model: CAT-Translate-1.4b
+  cat_max_new_tokens: 2048
+  cat_fallback_to_argos: true
+  cat_retry_wrong_language: 2

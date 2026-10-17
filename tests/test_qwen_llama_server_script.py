@@ -14,6 +14,7 @@ def test_qwen_launcher_uses_the_requested_safe_local_defaults() -> None:
 
     for expected in (
         "--host 127.0.0.1",
+        "-np 1",
         "-ngl %QWEN_N_GPU_LAYERS%",
         "-ncmoe %QWEN_N_CPU_MOE%",
         "-c %QWEN_CTX_SIZE%",
