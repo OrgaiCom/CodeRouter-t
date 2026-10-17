@@ -28,6 +28,7 @@ Secrets are resolved by reading the env var named by `api_key_env`.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 import yaml
@@ -53,6 +54,39 @@ _cwd_config_warning_emitted = False
 # Guards the one-time ``cwd-config-skipped`` warning (opt-in NOT set but a
 # ./providers.yaml exists and was ignored) — same once-per-process rationale.
 _cwd_config_skip_warning_emitted = False
+
+
+# Matches ${VAR} and $VAR forms. Named groups so the replacement callback
+# can tell them apart. A leading digit or bare ``$`` is NOT a valid name
+# start, so ``$5`` and ``$$`` pass through untouched.
+_ENV_VAR_RE = re.compile(
+    r"\$\{(?P<braced>[A-Za-z_][A-Za-z0-9_]*)\}"
+    r"|\$(?P<bare>[A-Za-z_][A-Za-z0-9_]*)"
+)
+
+
+def _expand_env_vars(value: str) -> str:
+    """Expand ``${VAR}`` / ``$VAR`` references using ``os.environ``.
+
+    Unlike :func:`os.path.expandvars`, an *undefined* variable is left
+    intact (the literal ``${VAR}`` survives) rather than collapsing to
+    an empty string. A silently-emptied endpoint would produce
+    ``http://127.0.0.1:/v1`` — a valid-looking URL that fails opaquely
+    at request time. Preserving the token lets the operator see their
+    typo in the startup log / config error instead of chasing a
+    connection-refused.
+
+    Non-string values pass through unchanged so callers can feed the
+    raw YAML dict through this without pre-filtering by type.
+    """
+    if not isinstance(value, str) or "$" not in value:
+        return value
+
+    def _repl(m: re.Match[str]) -> str:
+        name = m.group("braced") or m.group("bare")
+        return os.environ.get(name, m.group(0))
+
+    return _ENV_VAR_RE.sub(_repl, value)
 
 
 def cwd_config_allowed() -> bool:
@@ -189,6 +223,24 @@ def load_config(path: str | os.PathLike[str] | None = None) -> CodeRouterConfig:
 
     with chosen.open("r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
+
+    # v2.19: expand ${CAT_PORT} / $CAT_PORT in translation.cat_endpoint so
+    # the launch script's CAT_PORT env var and providers.yaml stay in sync
+    # without manual edits. Scoped to cat_endpoint only — deliberately NOT
+    # applied to restart_command / launcher binaries / command_template
+    # (command-execution fields), preserving the v2.13.0 code-execution-
+    # vector gating.
+    _translation = raw.get("translation")
+    if isinstance(_translation, dict) and isinstance(
+        _translation.get("cat_endpoint"), str
+    ):
+        _expanded = _expand_env_vars(_translation["cat_endpoint"])
+        if _expanded != _translation["cat_endpoint"]:
+            logger.debug(
+                "cat-endpoint-env-expanded",
+                extra={"original": _translation["cat_endpoint"], "expanded": _expanded},
+            )
+            _translation["cat_endpoint"] = _expanded
 
     # v0.6-A: CODEROUTER_MODE env overrides the YAML default_profile BEFORE
     # initial validation, so that (a) a typo'd file default that would otherwise

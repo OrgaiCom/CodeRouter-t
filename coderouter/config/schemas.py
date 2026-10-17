@@ -2526,7 +2526,7 @@ class TranslationConfig(BaseModel):
         description="Argos model directory. None = Argos standard cache.",
     )
     cat_endpoint: str = Field(
-        default="http://127.0.0.1:8080/v1",
+        default="http://127.0.0.1:8765/v1",
         description="OpenAI-compatible base URL for a CAT-Translate llama-server.",
     )
     cat_model: str = Field(

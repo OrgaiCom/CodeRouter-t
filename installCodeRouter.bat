@@ -147,14 +147,14 @@ goto :skip_translate_setup
     echo.
     echo [CAT] Setup complete.
     echo [CAT] Example server launch:
-    echo   llama-server.exe -m models\cat-translate\CAT-Translate-1.4b.Q4_K_M.gguf --host 127.0.0.1 --port 8080 -c 8192
+    echo   llama-server.exe -m models\cat-translate\CAT-Translate-1.4b.Q4_K_M.gguf --host 127.0.0.1 --port 8765 -c 8192
     echo.
     echo [CAT] providers.yaml example:
     echo ------------------------------------------------------------
     echo translation:
     echo   enabled: true
     echo   backend: cat_translate
-    echo   cat_endpoint: http://127.0.0.1:8080/v1
+    echo   cat_endpoint: http://127.0.0.1:8765/v1
     echo   cat_model: CAT-Translate-1.4b
     echo   cat_fallback_to_argos: true
     echo ------------------------------------------------------------

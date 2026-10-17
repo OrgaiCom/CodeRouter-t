@@ -28,9 +28,9 @@ exit /b 0
 
 :wait_for_llama
 set "LLAMA_WAIT_COUNT=0"
-if not defined LLAMA_PORT set "LLAMA_PORT=8080"
+if not defined CAT_PORT set "CAT_PORT=8765"
 :wait_for_llama_loop
-curl.exe -fsS "http://127.0.0.1:%LLAMA_PORT%/health" >nul 2>&1
+curl.exe -fsS "http://127.0.0.1:%CAT_PORT%/health" >nul 2>&1
 if not errorlevel 1 (
     echo [INFO] llama-server is up.
     exit /b 0

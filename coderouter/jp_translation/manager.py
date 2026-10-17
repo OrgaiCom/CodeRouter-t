@@ -28,7 +28,7 @@ class TranslatorManager:
         device: str = "cpu",
         model_tier: str = "standard",
         backend: str = "argos",
-        cat_endpoint: str = "http://127.0.0.1:8080/v1",
+        cat_endpoint: str = "http://127.0.0.1:8765/v1",
         cat_model: str = "CAT-Translate-1.4b",
         cat_timeout_s: float = 30.0,
         cat_max_new_tokens: int = 2048,
