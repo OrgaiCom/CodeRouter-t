@@ -110,6 +110,12 @@ docs/articles/
 # ============================================================
 models/
 
+# Locally unpacked llama.cpp runtime binaries.  Downloaded per-machine;
+# never add CUDA DLLs or executables to the source distribution.
+runtime/
+
 # tool-repair bench: locally generated results (curated evidence lives in results/)
 benchmarks/tool-repair/results_*.json
 benchmarks/tool-repair/results_*.md
+
+_tmp/
