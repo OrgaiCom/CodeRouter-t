@@ -224,12 +224,12 @@ def load_config(path: str | os.PathLike[str] | None = None) -> CodeRouterConfig:
     with chosen.open("r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
 
-    # v2.19: expand ${CAT_PORT} / $CAT_PORT in translation.cat_endpoint so
-    # the launch script's CAT_PORT env var and providers.yaml stay in sync
-    # without manual edits. Scoped to cat_endpoint only — deliberately NOT
-    # applied to restart_command / launcher binaries / command_template
-    # (command-execution fields), preserving the v2.13.0 code-execution-
-    # vector gating.
+    # v2.19: expand ${TRANSLATE_PORT} / $TRANSLATE_PORT in
+    # translation.cat_endpoint so the launch script's TRANSLATE_PORT env
+    # var and providers.yaml stay in sync without manual edits. Scoped to
+    # cat_endpoint only — deliberately NOT applied to restart_command /
+    # launcher binaries / command_template (command-execution fields),
+    # preserving the v2.13.0 code-execution-vector gating.
     _translation = raw.get("translation")
     if isinstance(_translation, dict) and isinstance(
         _translation.get("cat_endpoint"), str

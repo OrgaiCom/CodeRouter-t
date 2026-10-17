@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Download CAT-Translate GGUF for llama-server without bundling it in CodeRouter.
 
-Default matches ``llamaServe.bat``: the public quantized GGUF
+Default matches ``llamaTranslateServe.bat``: the public quantized GGUF
 ``mradermacher/CAT-Translate-1.4b-GGUF / CAT-Translate-1.4b.Q4_K_M.gguf``
 (~931MB) into ``models/cat-translate/``.
 
@@ -68,7 +68,7 @@ def main() -> int:
         rc = _download_via_hub_api(args.repo, args.filename, args.dest)
     if rc == 0:
         print(f"CAT-Translate GGUF を {args.dest} に配置しました。")
-        print("起動例: llamaServe.bat (llama-server --host 127.0.0.1 --port 8080 -c 8192)")
+        print("起動例: llamaTranslateServe.bat (llama-server --host 127.0.0.1 --port 8765 -c 8192)")
     return rc
 
 

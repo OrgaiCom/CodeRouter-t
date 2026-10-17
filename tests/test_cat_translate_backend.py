@@ -96,8 +96,8 @@ def test_translation_config_defaults_to_argos_and_accepts_cat_translate() -> Non
 def test_translation_config_cat_endpoint_default_is_8765() -> None:
     """v2.19: CAT-Translate default port moved off 8080 (llama.cpp's own
     default) to 8765 so a local LLM and the CAT server can run side by
-    side. The launch script (llamaServe.bat) honours the same default
-    via the CAT_PORT env var.
+    side. The launch script (llamaTranslateServe.bat) honours the same
+    default via the TRANSLATE_PORT env var.
     """
     assert TranslationConfig().cat_endpoint == "http://127.0.0.1:8765/v1"
 

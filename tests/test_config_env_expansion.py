@@ -23,8 +23,8 @@ from coderouter.config.schemas import CodeRouterConfig
 # ---------------------------------------------------------------------------
 
 def test_expand_defined_braced_var(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("CAT_PORT", "9999")
-    assert _expand_env_vars("http://127.0.0.1:${CAT_PORT}/v1") == "http://127.0.0.1:9999/v1"
+    monkeypatch.setenv("TRANSLATE_PORT", "9999")
+    assert _expand_env_vars("http://127.0.0.1:${TRANSLATE_PORT}/v1") == "http://127.0.0.1:9999/v1"
 
 
 def test_expand_defined_bare_var(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -38,15 +38,15 @@ def test_undefined_var_left_intact(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_undefined_var_in_url_left_intact(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("CAT_PORT", raising=False)
-    result = _expand_env_vars("http://127.0.0.1:${CAT_PORT}/v1")
-    assert result == "http://127.0.0.1:${CAT_PORT}/v1"
+    monkeypatch.delenv("TRANSLATE_PORT", raising=False)
+    result = _expand_env_vars("http://127.0.0.1:${TRANSLATE_PORT}/v1")
+    assert result == "http://127.0.0.1:${TRANSLATE_PORT}/v1"
 
 
 def test_mixed_defined_and_undefined(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("CAT_PORT", "8765")
+    monkeypatch.setenv("TRANSLATE_PORT", "8765")
     monkeypatch.delenv("MISSING", raising=False)
-    result = _expand_env_vars("${CAT_PORT}/${MISSING}")
+    result = _expand_env_vars("${TRANSLATE_PORT}/${MISSING}")
     assert result == "8765/${MISSING}"
 
 
@@ -68,8 +68,8 @@ def test_dollar_digit_not_expanded(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_multiple_vars_in_one_string(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HOST", "127.0.0.1")
-    monkeypatch.setenv("CAT_PORT", "8765")
-    assert _expand_env_vars("http://$HOST:${CAT_PORT}/v1") == "http://127.0.0.1:8765/v1"
+    monkeypatch.setenv("TRANSLATE_PORT", "8765")
+    assert _expand_env_vars("http://$HOST:${TRANSLATE_PORT}/v1") == "http://127.0.0.1:8765/v1"
 
 
 # ---------------------------------------------------------------------------
@@ -97,16 +97,16 @@ def _write_minimal_yaml(path: Path, translation: dict | None = None) -> None:
 def test_load_config_expands_cat_endpoint_env_var(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``${CAT_PORT}`` in cat_endpoint is expanded at load time."""
+    """``${TRANSLATE_PORT}`` in cat_endpoint is expanded at load time."""
     cfg_file = tmp_path / "providers.yaml"
     _write_minimal_yaml(
         cfg_file,
         translation={
             "backend": "cat_translate",
-            "cat_endpoint": "http://127.0.0.1:${CAT_PORT}/v1",
+            "cat_endpoint": "http://127.0.0.1:${TRANSLATE_PORT}/v1",
         },
     )
-    monkeypatch.setenv("CAT_PORT", "9999")
+    monkeypatch.setenv("TRANSLATE_PORT", "9999")
     cfg = load_config(cfg_file)
     assert cfg.translation.cat_endpoint == "http://127.0.0.1:9999/v1"
 
@@ -114,19 +114,19 @@ def test_load_config_expands_cat_endpoint_env_var(
 def test_load_config_leaves_undefined_cat_endpoint_intact(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Undefined ``${CAT_PORT}`` survives — the operator sees their typo,
+    """Undefined ``${TRANSLATE_PORT}`` survives — the operator sees their typo,
     not an opaque ``http://127.0.0.1:/v1``."""
     cfg_file = tmp_path / "providers.yaml"
     _write_minimal_yaml(
         cfg_file,
         translation={
             "backend": "cat_translate",
-            "cat_endpoint": "http://127.0.0.1:${CAT_PORT}/v1",
+            "cat_endpoint": "http://127.0.0.1:${TRANSLATE_PORT}/v1",
         },
     )
-    monkeypatch.delenv("CAT_PORT", raising=False)
+    monkeypatch.delenv("TRANSLATE_PORT", raising=False)
     cfg = load_config(cfg_file)
-    assert cfg.translation.cat_endpoint == "http://127.0.0.1:${CAT_PORT}/v1"
+    assert cfg.translation.cat_endpoint == "http://127.0.0.1:${TRANSLATE_PORT}/v1"
 
 
 def test_load_config_no_expansion_when_plain_url(
@@ -141,7 +141,7 @@ def test_load_config_no_expansion_when_plain_url(
             "cat_endpoint": "http://127.0.0.1:8765/v1",
         },
     )
-    monkeypatch.setenv("CAT_PORT", "9999")
+    monkeypatch.setenv("TRANSLATE_PORT", "9999")
     cfg = load_config(cfg_file)
     assert cfg.translation.cat_endpoint == "http://127.0.0.1:8765/v1"
 

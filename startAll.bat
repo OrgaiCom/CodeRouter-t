@@ -5,9 +5,9 @@ if not exist "%USERPROFILE%\.coderouter-t" mkdir "%USERPROFILE%\.coderouter-t"
 
 copy /Y "%~dp0providers.yaml" "%USERPROFILE%\.coderouter-t\."
 
-:: 1. new cmd and llamaServe.bat (only when CAT-Translate is installed)
+:: 1. new cmd and llamaTranslateServe.bat (only when CAT-Translate is installed)
 if exist "%~dp0models\cat-translate\CAT-Translate-1.4b.Q4_K_M.gguf" (
-    start "CAT-Translate llama-server" cmd /k "%~dp0llamaServe.bat"
+    start "CAT-Translate llama-server" cmd /k "%~dp0llamaTranslateServe.bat"
     call :wait_for_llama
 ) else (
     echo [INFO] CAT-Translate GGUF not found. Skipping llama-server.
@@ -28,9 +28,9 @@ exit /b 0
 
 :wait_for_llama
 set "LLAMA_WAIT_COUNT=0"
-if not defined CAT_PORT set "CAT_PORT=8765"
+if not defined TRANSLATE_PORT set "TRANSLATE_PORT=8765"
 :wait_for_llama_loop
-curl.exe -fsS "http://127.0.0.1:%CAT_PORT%/health" >nul 2>&1
+curl.exe -fsS "http://127.0.0.1:%TRANSLATE_PORT%/health" >nul 2>&1
 if not errorlevel 1 (
     echo [INFO] llama-server is up.
     exit /b 0

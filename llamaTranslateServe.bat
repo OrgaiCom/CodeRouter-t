@@ -7,7 +7,7 @@ cd /d "%~dp0"
 set "LLAMA_N_GPU_LAYERS=0"
 
 set "CAT_MODEL=%~dp0models\cat-translate\CAT-Translate-1.4b.Q4_K_M.gguf"
-if not defined CAT_PORT set "CAT_PORT=8765"
+if not defined TRANSLATE_PORT set "TRANSLATE_PORT=8765"
 if not defined LLAMA_CTX_SIZE set "LLAMA_CTX_SIZE=8192"
 if not defined LLAMA_N_PARALLEL set "LLAMA_N_PARALLEL=1"
 if not defined LLAMA_N_GPU_LAYERS set "LLAMA_N_GPU_LAYERS=99"
@@ -34,7 +34,7 @@ echo ============================================================
 echo  CAT-Translate llama-server
 echo ============================================================
 echo  Model : %CAT_MODEL%
-echo  URL   : http://127.0.0.1:%CAT_PORT%/v1
+echo  URL   : http://127.0.0.1:%TRANSLATE_PORT%/v1
 echo  GPU layers: %LLAMA_N_GPU_LAYERS%
 echo.
 echo To avoid VRAM conflicts, set the following before launch:
@@ -44,7 +44,7 @@ echo.
 llama-server.exe ^
     -m "%CAT_MODEL%" ^
     --host 127.0.0.1 ^
-    --port %CAT_PORT% ^
+    --port %TRANSLATE_PORT% ^
     -c %LLAMA_CTX_SIZE% ^
     -np %LLAMA_N_PARALLEL% ^
     -ngl %LLAMA_N_GPU_LAYERS%

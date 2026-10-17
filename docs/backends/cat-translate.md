@@ -29,7 +29,7 @@ installCodeRouter.bat cat
 
 セットアップでは、公式Safetensorsを毎回変換する代わりに、CAT-Translateを元にした公開GGUF量子化版Q4_K_M（約931MB）を取得します。モデルカードの最大位置長は8192のため、CodeRouterは長文を段落・文境界で分割します。
 
-セットアップ済みの環境では、ワークスペース直下の`startAllSystem.bat`から`CodeRouter\startAll.bat`を呼び出し、`llamaServe.bat`を先に起動します。ヘルスチェック完了後にCodeRouterを起動します。GGUFが存在しない場合は、llama-serverを起動せず従来の起動処理を続行します。
+セットアップ済みの環境では、ワークスペース直下の`startAllSystem.bat`から`CodeRouter\startAll.bat`を呼び出し、`llamaTranslateServe.bat`を先に起動します。ヘルスチェック完了後にCodeRouterを起動します。GGUFが存在しない場合は、llama-serverを起動せず従来の起動処理を続行します。
 
 CATへのリクエストは、公式形式に合わせて次のプロンプトを使います。
 
