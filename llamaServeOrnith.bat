@@ -4,7 +4,7 @@ setlocal
 
 cd /d "%~dp0"
 
-rem ornith 35B-A3B
+rem ornith 1.5 35B-A3B
 if not defined LLAMA_MODEL set "LLAMA_MODEL=C:\Users\asdfj\.ollama\models\blobs\sha256-ca6ea26329c88b78ffd90a85163be2e746c2fafd1024f56db47e499f117f9a7f"
 if not defined LLAMA_PORT set "LLAMA_PORT=8080"
 if not defined LLAMA_CTX_SIZE set "LLAMA_CTX_SIZE=128000"
