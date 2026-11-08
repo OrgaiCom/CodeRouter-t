@@ -10,22 +10,22 @@ start "llama-server" cmd /k "%~dp0llamaServe.bat"
 call :wait_for_llama_server
 
 :: 2. new cmd and llamaTranslateServe.bat (only when CAT-Translate is installed)
-if exist "%~dp0models\cat-translate\CAT-Translate-1.4b.Q4_K_M.gguf" (
-    start "CAT-Translate llama-server" cmd /k "%~dp0llamaTranslateServe.bat"
-    call :wait_for_llama_translate
-) else (
-    echo [INFO] CAT-Translate GGUF not found. Skipping llama-server.
-)
+::if exist "%~dp0models\cat-translate\CAT-Translate-1.4b.Q4_K_M.gguf" (
+::    start "CAT-Translate llama-server" cmd /k "%~dp0llamaTranslateServe.bat"
+::    call :wait_for_llama_translate
+::) else (
+::    echo [INFO] CAT-Translate GGUF not found. Skipping llama-server.
+::)
 
 
 :: 3. new cmd and codeRouterServe.bat
 start "CodeRouter-t Server" cmd /k "%~dp0codeRouterServe.bat"
 
 :: 4. new cmd and ollamaServe.bat
-start "Ollama Server" cmd /k "%~dp0ollamaServe.bat"
+::start "Ollama Server" cmd /k "%~dp0ollamaServe.bat"
 
 :: 5. new cmd and ollamaPs.bat
-start "Ollama Ps" cmd /k "%~dp0ollamaPs.bat"
+::start "Ollama Ps" cmd /k "%~dp0ollamaPs.bat"
 
 :: 6. VS Code
 start code ..
