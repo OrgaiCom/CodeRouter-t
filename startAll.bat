@@ -28,6 +28,7 @@ start "CodeRouter-t Server" cmd /k "%~dp0codeRouterServe.bat"
 ::start "Ollama Ps" cmd /k "%~dp0ollamaPs.bat"
 
 :: 6. VS Code
+start code ..\..
 start code ..
 exit /b 0
 
