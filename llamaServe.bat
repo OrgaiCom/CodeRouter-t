@@ -5,7 +5,7 @@ setlocal
 
 cd /d "%~dp0"
 
-if not defined LLAMA_MODEL set "LLAMA_MODEL=C:\models\hf\LFM2.5-24B-A2B-TBrill-NEO-IQ4_XS.gguf"
+if not defined LLAMA_MODEL set "LLAMA_MODEL=InternScience/Sage-A1.5-Q4_K_M-GGUF"
 if not defined LLAMA_PORT set "LLAMA_PORT=8080"
 
 rem Hardware settings
@@ -13,11 +13,11 @@ if not defined LLAMA_CTX_SIZE set "LLAMA_CTX_SIZE=128000"
 if not defined LLAMA_N_GPU_LAYERS set "LLAMA_N_GPU_LAYERS=99"
 
 rem Model settings
-if not defined LLAMA_TEMP set "LLAMA_TEMP=0.6"
+if not defined LLAMA_TEMP set "LLAMA_TEMP=1.0"
 if not defined LLAMA_TOP_P set "LLAMA_TOP_P=0.95"
-if not defined LLAMA_TOP_K set "LLAMA_TOP_K=50"
-if not defined LLAMA_MIN_P set "LLAMA_MIN_P=0.05"
-if not defined LLAMA_REPEAT_PENALTY set "LLAMA_REPEAT_PENALTY=1.05"
+if not defined LLAMA_TOP_K set "LLAMA_TOP_K=20"
+if not defined LLAMA_MIN_P set "LLAMA_MIN_P=0.0"
+if not defined LLAMA_REPEAT_PENALTY set "LLAMA_REPEAT_PENALTY=1.0"
 
 if not defined LLAMA_SERVER set "LLAMA_SERVER=llama-server.exe"
 
@@ -34,19 +34,13 @@ echo  Top K        : %LLAMA_TOP_K%
 echo  Min P        : %LLAMA_MIN_P%
 echo.
 
-if not exist "%LLAMA_MODEL%" (
-    echo ERROR: Model file not found.
-    pause
-    exit /b 1
-)
-
 "%LLAMA_SERVER%" ^
-    -m "%LLAMA_MODEL%" ^
+    -hf "%LLAMA_MODEL%" ^
     --host 127.0.0.1 ^
     --port %LLAMA_PORT% ^
     -np 1 ^
     -ngl %LLAMA_N_GPU_LAYERS% ^
-    --n-cpu-moe 22 ^
+    --n-cpu-moe 32 ^
     -c %LLAMA_CTX_SIZE% ^
     -ctk q4_0 ^
     -ctv q4_0 ^
@@ -55,6 +49,9 @@ if not exist "%LLAMA_MODEL%" (
     --top-p %LLAMA_TOP_P% ^
     --top-k %LLAMA_TOP_K% ^
     --min-p %LLAMA_MIN_P% ^
+    -fa on ^
+    --reasoning-format deepseek ^
+    --presence-penalty 1.5 ^
     --repeat-penalty %LLAMA_REPEAT_PENALTY%
 
 endlocal
