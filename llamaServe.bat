@@ -46,7 +46,7 @@ if not exist "%LLAMA_MODEL%" (
     --port %LLAMA_PORT% ^
     -np 1 ^
     -ngl %LLAMA_N_GPU_LAYERS% ^
-    --n-cpu-moe 33 ^
+    --n-cpu-moe 22 ^
     -c %LLAMA_CTX_SIZE% ^
     -ctk q4_0 ^
     -ctv q4_0 ^
