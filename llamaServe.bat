@@ -31,6 +31,7 @@ echo.
     -ctv q4_0 ^
     --reasoning off ^
     --jinja ^
-    --temp 0.6 --top-p 0.95 --top-k 20
+    --temp 0.6 --top-p 0.95 --top-k 20 ^
+    --alias local-model
 
 endlocal

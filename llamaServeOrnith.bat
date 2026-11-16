@@ -32,6 +32,7 @@ echo.
     -ctv q4_0 ^
     --parallel 1 ^
     --reasoning off ^
-    --flash-attn on
+    --flash-attn on ^
+    --alias local-model
 
 endlocal
