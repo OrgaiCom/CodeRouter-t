@@ -24,6 +24,7 @@ echo.
     -hf "%LLAMA_MODEL%" ^
     --host 127.0.0.1 ^
     --port %LLAMA_PORT% ^
+    --no-mmproj ^
     -np 1 ^
     -ngl %LLAMA_N_GPU_LAYERS% ^
     -ncmoe %LLAMA_N_CPU_MOE% ^
