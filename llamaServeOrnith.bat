@@ -33,6 +33,11 @@ echo.
     --parallel 1 ^
     --reasoning off ^
     --flash-attn on ^
+    --jinja ^
+    --temp 0.6 --top-p 0.95 --top-k 20 ^
+    --repeat-penalty 1.05 ^
+    --repeat-last-n 128 ^
+    --presence-penalty 0.0 ^
     --alias local-model
 
 endlocal
