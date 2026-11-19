@@ -36,7 +36,7 @@ echo.
     --flash-attn on ^
     --jinja ^
     --temp 0.6 --top-p 0.95 --top-k 20 --min-p 0.0 ^
-    --repeat-penalty 1.00 ^
+    --repeat-penalty 1.05 ^
     --repeat-last-n 128 ^
     --presence-penalty 0.0 ^
     --alias local-model
