@@ -4,8 +4,7 @@ setlocal
 
 cd /d "%~dp0"
 
-rem ornith 1.5 35B-A3B
-if not defined LLAMA_MODEL set "LLAMA_MODEL=ornith-ai/Ornith-1.5-9B-GGUF:Q4_K_M"
+if not defined LLAMA_MODEL set "LLAMA_MODEL=peculiar-ragdoll/Tiel-Coder-35B-A3B-GGUF-MTP:UD-IQ4_XS"
 if not defined LLAMA_PORT set "LLAMA_PORT=8080"
 if not defined LLAMA_CTX_SIZE set "LLAMA_CTX_SIZE=128000"
 if not defined LLAMA_N_GPU_LAYERS set "LLAMA_N_GPU_LAYERS=99"
@@ -24,18 +23,18 @@ echo.
     -hf "%LLAMA_MODEL%" ^
     --host 127.0.0.1 ^
     --port %LLAMA_PORT% ^
-    --no-mmproj ^
     -np 1 ^
     -ngl %LLAMA_N_GPU_LAYERS% ^
     -ncmoe %LLAMA_N_CPU_MOE% ^
     -c %LLAMA_CTX_SIZE% ^
     -ctk q4_0 ^
     -ctv q4_0 ^
+    --spec-type draft-mtp ^
     --parallel 1 ^
     --reasoning off ^
     --flash-attn on ^
     --jinja ^
-    --temp 0.6 --top-p 0.95 --top-k 20 --min-p 0.0 ^
+    --temp 0.6 --top-p 0.95 --top-k 20 ^
     --repeat-penalty 1.05 ^
     --repeat-last-n 128 ^
     --presence-penalty 0.0 ^
