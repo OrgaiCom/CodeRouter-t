@@ -8,7 +8,7 @@ if not defined LLAMA_MODEL set "LLAMA_MODEL=peculiar-ragdoll/Tiel-Coder-35B-A3B-
 if not defined LLAMA_PORT set "LLAMA_PORT=8080"
 if not defined LLAMA_CTX_SIZE set "LLAMA_CTX_SIZE=128000"
 if not defined LLAMA_N_GPU_LAYERS set "LLAMA_N_GPU_LAYERS=99"
-if not defined LLAMA_N_CPU_MOE set "LLAMA_N_CPU_MOE=31"
+if not defined LLAMA_N_CPU_MOE set "LLAMA_N_CPU_MOE=32"
 if not defined LLAMA_LLAMA_SERVER set "LLAMA_LLAMA_SERVER=llama"
 
 echo  Model        : %LLAMA_MODEL%
@@ -23,6 +23,7 @@ echo.
     -hf "%LLAMA_MODEL%" ^
     --host 127.0.0.1 ^
     --port %LLAMA_PORT% ^
+    --no-mmproj ^
     -np 1 ^
     -ngl %LLAMA_N_GPU_LAYERS% ^
     -ncmoe %LLAMA_N_CPU_MOE% ^
