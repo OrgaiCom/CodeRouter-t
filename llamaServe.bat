@@ -9,7 +9,7 @@ if not defined LLAMA_MODEL set "LLAMA_MODEL=C:\Users\asdfj\.ollama\models\blobs\
 if not defined LLAMA_PORT set "LLAMA_PORT=8080"
 if not defined LLAMA_CTX_SIZE set "LLAMA_CTX_SIZE=128000"
 if not defined LLAMA_N_GPU_LAYERS set "LLAMA_N_GPU_LAYERS=99"
-if not defined LLAMA_N_CPU_MOE set "LLAMA_N_CPU_MOE=31"
+if not defined LLAMA_N_CPU_MOE set "LLAMA_N_CPU_MOE=30"
 if not defined LLAMA_LLAMA_SERVER set "LLAMA_LLAMA_SERVER=llama"
 
 echo  Model        : %LLAMA_MODEL%
