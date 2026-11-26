@@ -4,12 +4,11 @@ setlocal
 
 cd /d "%~dp0"
 
-rem ornith 1.5 35B-A3B
-if not defined LLAMA_MODEL        set "LLAMA_MODEL=C:\Users\asdfj\.ollama\models\blobs\sha256-ca6ea26329c88b78ffd90a85163be2e746c2fafd1024f56db47e499f117f9a7f"
+if not defined LLAMA_MODEL        set "LLAMA_MODEL=C:\models\hf\Qwen3.6-35B-A3B-APEX-I-Balanced.gguf"
 if not defined LLAMA_PORT         set "LLAMA_PORT=8080"
 if not defined LLAMA_CTX_SIZE     set "LLAMA_CTX_SIZE=128000"
 if not defined LLAMA_N_GPU_LAYERS set "LLAMA_N_GPU_LAYERS=99"
-if not defined LLAMA_N_CPU_MOE    set "LLAMA_N_CPU_MOE=31"
+if not defined LLAMA_N_CPU_MOE    set "LLAMA_N_CPU_MOE=33"
 if not defined LLAMA_CTK          set "LLAMA_CTK=turbo4"
 if not defined LLAMA_CTV          set "LLAMA_CTV=turbo4"
 if not defined LLAMA_LLAMA_SERVER set "LLAMA_LLAMA_SERVER=C:\secretary\freebuff\projects\llama-cpp-turboquant-tqp-v0.4.0\build\bin\Release\llama-server"
