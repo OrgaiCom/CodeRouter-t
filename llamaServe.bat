@@ -15,6 +15,7 @@ if not defined LLAMA_CTV          set "LLAMA_CTV=turbo4"
 if not defined LLAMA_LLAMA_SERVER set "LLAMA_LLAMA_SERVER=C:\secretary\freebuff\projects\llama-cpp-turboquant-tqp-v0.4.0\build\bin\Release\llama-server"
 
 set "PATH=C:\secretary\freebuff\projects\llama-cpp-turboquant-tqp-v0.4.0\build\bin\Release;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.3\bin;%PATH%"
+set "GGML_TQ_NATIVE=1"
 
 echo  Model        : %LLAMA_MODEL%
 echo  URL          : http://127.0.0.1:%LLAMA_PORT%/v1
