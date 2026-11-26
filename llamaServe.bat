@@ -4,17 +4,17 @@ setlocal
 
 cd /d "%~dp0"
 
-if not defined LLAMA_MODEL        set "LLAMA_MODEL=C:\models\hf\Qwen3.6-35B-A3B-APEX-I-Balanced.gguf"
+if not defined LLAMA_MODEL        set "LLAMA_MODEL=C:\models\hf\apex\Qwen3.6-35B-A3B-APEX-I-Compact.gguf"
 if not defined LLAMA_PORT         set "LLAMA_PORT=8080"
 if not defined LLAMA_CTX_SIZE     set "LLAMA_CTX_SIZE=128000"
 if not defined LLAMA_N_GPU_LAYERS set "LLAMA_N_GPU_LAYERS=99"
-if not defined LLAMA_N_CPU_MOE    set "LLAMA_N_CPU_MOE=33"
+if not defined LLAMA_N_CPU_MOE    set "LLAMA_N_CPU_MOE=30"
 if not defined LLAMA_CTK          set "LLAMA_CTK=turbo4"
 if not defined LLAMA_CTV          set "LLAMA_CTV=turbo4"
-if not defined LLAMA_LLAMA_SERVER set "LLAMA_LLAMA_SERVER=C:\secretary\freebuff\projects\llama-cpp-turboquant-tqp-v0.4.0\build\bin\Release\llama-server"
+if not defined LLAMA_LLAMA_SERVER set "LLAMA_LLAMA_SERVER=C:\app\turboquant-plus-tqp-v0.4.0-windows-x64-cuda12.4\llama-server"
 
-set "PATH=C:\secretary\freebuff\projects\llama-cpp-turboquant-tqp-v0.4.0\build\bin\Release;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.3\bin;%PATH%"
-set "GGML_TQ_NATIVE=1"
+set "PATH=C:\app\turboquant-plus-tqp-v0.4.0-windows-x64-cuda12.4;%PATH%"
+rem set "GGML_TQ_NATIVE=1"
 
 echo  Model        : %LLAMA_MODEL%
 echo  URL          : http://127.0.0.1:%LLAMA_PORT%/v1
@@ -37,12 +37,12 @@ echo.
     -ctv %LLAMA_CTV% ^
     --parallel 1 ^
     --flash-attn on ^
+    --no-mmap ^
+    --mlock ^
     --batch-size 2048 ^
     --ubatch-size 512 ^
     --threads 12 ^
     --cont-batching ^
-    --no-mmap ^
-    --mlock ^
     --timeout 300 ^
     --jinja ^
     --reasoning off ^
