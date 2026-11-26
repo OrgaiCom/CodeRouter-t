@@ -9,10 +9,12 @@ if not defined LLAMA_MODEL        set "LLAMA_MODEL=C:\Users\asdfj\.ollama\models
 if not defined LLAMA_PORT         set "LLAMA_PORT=8080"
 if not defined LLAMA_CTX_SIZE     set "LLAMA_CTX_SIZE=128000"
 if not defined LLAMA_N_GPU_LAYERS set "LLAMA_N_GPU_LAYERS=99"
-if not defined LLAMA_N_CPU_MOE    set "LLAMA_N_CPU_MOE=30"
+if not defined LLAMA_N_CPU_MOE    set "LLAMA_N_CPU_MOE=31"
 if not defined LLAMA_CTK          set "LLAMA_CTK=turbo4"
 if not defined LLAMA_CTV          set "LLAMA_CTV=turbo4"
 if not defined LLAMA_LLAMA_SERVER set "LLAMA_LLAMA_SERVER=C:\secretary\freebuff\projects\llama-cpp-turboquant-tqp-v0.4.0\build\bin\Release\llama-server"
+
+set "PATH=C:\secretary\freebuff\projects\llama-cpp-turboquant-tqp-v0.4.0\build\bin\Release;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.3\bin;%PATH%"
 
 echo  Model        : %LLAMA_MODEL%
 echo  URL          : http://127.0.0.1:%LLAMA_PORT%/v1
@@ -23,7 +25,7 @@ echo  CPU MoE layer: %LLAMA_N_CPU_MOE%
 echo  KV cache     : k=%LLAMA_CTK% v=%LLAMA_CTV%
 echo.
 
-"%LLAMA_LLAMA_SERVER%" serve ^
+"%LLAMA_LLAMA_SERVER%" ^
     -m "%LLAMA_MODEL%" ^
     --host 127.0.0.1 ^
     --port %LLAMA_PORT% ^
