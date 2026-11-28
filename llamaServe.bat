@@ -4,7 +4,7 @@ setlocal
 
 cd /d "%~dp0"
 
-if not defined LLAMA_MODEL        set "LLAMA_MODEL=C:\models\hf\apex\Qwen3.6-35B-A3B-APEX-I-Compact.gguf"
+if not defined LLAMA_MODEL        set "LLAMA_MODEL=Jackrong/DeepSeek-V4-Pro-Qwen3.5-9B-MTP-GGUF:Q4_K_M"
 if not defined LLAMA_PORT         set "LLAMA_PORT=8080"
 if not defined LLAMA_CTX_SIZE     set "LLAMA_CTX_SIZE=128000"
 if not defined LLAMA_N_GPU_LAYERS set "LLAMA_N_GPU_LAYERS=99"
@@ -26,7 +26,7 @@ echo  KV cache     : k=%LLAMA_CTK% v=%LLAMA_CTV%
 echo.
 
 "%LLAMA_LLAMA_SERVER%" ^
-    -m "%LLAMA_MODEL%" ^
+    -hf "%LLAMA_MODEL%" ^
     --host 127.0.0.1 ^
     --port %LLAMA_PORT% ^
     --no-mmproj ^
@@ -51,6 +51,8 @@ echo.
     --repeat-last-n 128 ^
     --presence-penalty 0.0 ^
     --metrics ^
+    --spec-type draft-mtp ^
+    --spec-draft-n-max 2 ^
     --alias local-model
 
 endlocal
